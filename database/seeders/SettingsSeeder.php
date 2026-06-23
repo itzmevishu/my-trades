@@ -64,6 +64,17 @@ class SettingsSeeder extends Seeder
         Setting::setValue('paper_win_rate', 0, 'decimal', 'Current paper trade win rate %');
         Setting::setValue('paper_avg_rr', 0, 'decimal', 'Average risk-reward achieved in paper trades');
         
+        // SEBI Compliance (Effective April 1, 2026)
+        Setting::setValue('sebi_compliant_mode', true, 'boolean', 'SEBI April 2026 framework enabled');
+        Setting::setValue('static_ip_address', '', 'string', 'Whitelisted static IP for Fyers API');
+        Setting::setValue('fyers_new_app_id', '', 'string', 'Fyers App ID (post-April 1 2026)');
+        Setting::setValue('last_2fa_auth_date', '', 'string', 'Last successful 2FA authentication date');
+        Setting::setValue('require_daily_2fa', true, 'boolean', 'Require daily 2FA before trading');
+        Setting::setValue('max_orders_per_second', 10, 'integer', 'SEBI rate limit: max orders per second');
+        Setting::setValue('use_mpp_orders', true, 'boolean', 'Use MPP instead of pure market orders');
+        Setting::setValue('mpp_price_protection_pct', 5.0, 'decimal', 'MPP price protection band %');
+        
         $this->command->info('✓ Default settings seeded successfully!');
+        $this->command->warn('⚠ SEBI Compliance: Configure static IP and new Fyers App ID before April 1, 2026');
     }
 }
