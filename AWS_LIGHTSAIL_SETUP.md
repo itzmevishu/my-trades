@@ -201,7 +201,7 @@ sudo systemctl restart apache2
 cd /opt/bitnami/apache2/htdocs
 
 # 2. Clone your repository
-sudo git clone https://github.com/YOUR_USERNAME/my-trades.git
+sudo git clone https://github.com/itzmevishu/my-trades.git
 cd my-trades
 
 # 3. Set ownership (bitnami user runs Apache)

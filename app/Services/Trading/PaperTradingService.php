@@ -4,6 +4,7 @@ namespace App\Services\Trading;
 
 use App\Services\BaseService;
 use App\Services\Fyers\FyersSimulator;
+use App\Services\Fyers\FyersDataService;
 use App\Services\Analysis\EMACalculator;
 use App\Services\Analysis\PatternDetector;
 use App\Services\Claude\ClaudeAPIService;
@@ -37,6 +38,7 @@ class PaperTradingService extends BaseService
     private EMACalculator $emaCalculator;
     private PatternDetector $patternDetector;
     private ClaudeAPIService $claudeService;
+    private FyersDataService $fyersData;
 
     public function __construct()
     {
@@ -44,6 +46,7 @@ class PaperTradingService extends BaseService
         $this->emaCalculator = new EMACalculator();
         $this->patternDetector = new PatternDetector();
         $this->claudeService = new ClaudeAPIService();
+        $this->fyersData = new FyersDataService();
     }
 
     /**
@@ -73,8 +76,16 @@ class PaperTradingService extends BaseService
             return null;
         }
 
-        // Get market data
-        $candles = FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '15', 250);
+        // Get market data (real or simulated based on settings)
+        $useRealData = setting('use_real_data', false);
+        
+        if ($useRealData) {
+            $this->logInfo('Fetching REAL market data from Fyers API');
+            $candles = $this->fyersData->fetchCandles('NSE:NIFTYBANK-INDEX', '15m', 250);
+        } else {
+            $this->logInfo('Using SIMULATED market data');
+            $candles = FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '15', 250);
+        }
         
         if (!$candles || count($candles) < 200) {
             $this->logWarning('Insufficient candle data for analysis');
@@ -149,14 +160,24 @@ class PaperTradingService extends BaseService
         // Calculate ATM strike
         $atmStrike = $this->riskEngine->calculateATMStrike($currentPrice);
 
-        // Get option premium from simulator
+        // Get option premium (real or simulated)
         $optionType = $patternResult['direction'] === 'bullish' ? 'CALL' : 'PUT';
-        $entryPremium = FyersSimulator::getOptionPremium(
-            $currentPrice,
-            $atmStrike,
-            $optionType,
-            0 // Assuming same-day expiry for simplicity
-        );
+        
+        if ($useRealData) {
+            // Build option symbol for Fyers
+            $expiry = Carbon::now()->format('dMy'); // e.g., 23Jun26
+            $symbol = "NSE:BANKNIFTY{$expiry}{$atmStrike}" . ($optionType === 'CALL' ? 'CE' : 'PE');
+            $entryPremium = $this->fyersData->getOptionLTP($symbol);
+            $this->logInfo("Real option premium from Fyers: ₹{$entryPremium}");
+        } else {
+            $entryPremium = FyersSimulator::getOptionPremium(
+                $currentPrice,
+                $atmStrike,
+                $optionType === 'CALL' ? 'CE' : 'PE',
+                0 // Assuming same-day expiry for simplicity
+            );
+            $this->logInfo("Simulated option premium: ₹{$entryPremium}");
+        }
 
         // Calculate SL level from candles
         $slLevel = $this->riskEngine->calculateSLLevel($candles, $patternResult['direction']);
@@ -248,13 +269,23 @@ class PaperTradingService extends BaseService
     {
         $this->logInfo('Monitoring trade', ['trade_id' => $trade->id]);
 
-        // Get current option premium
-        $currentPremium = FyersSimulator::getOptionPremium(
-            FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '1', 1)[0]['close'],
-            $trade->strike,
-            $trade->option_type,
-            0
-        );
+        // Get current option premium (real or simulated)
+        $useRealData = setting('use_real_data', false);
+        
+        if ($useRealData) {
+            // Build option symbol for Fyers
+            $expiry = Carbon::parse($trade->entry_time)->format('dMy');
+            $optionSuffix = ($trade->option_type === 'CALL' || $trade->option_type === 'CE') ? 'CE' : 'PE';
+            $symbol = "NSE:BANKNIFTY{$expiry}{$trade->strike}{$optionSuffix}";
+            $currentPremium = $this->fyersData->getOptionLTP($symbol);
+        } else {
+            $currentPremium = FyersSimulator::getOptionPremium(
+                FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '1', 1)[0]['close'],
+                $trade->strike,
+                $trade->option_type === 'CALL' ? 'CE' : 'PE',
+                0
+            );
+        }
 
         // Check for SL hit
         if ($this->isStopLossHit($trade, $currentPremium)) {

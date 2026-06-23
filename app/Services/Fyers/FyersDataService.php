@@ -4,6 +4,8 @@ namespace App\Services\Fyers;
 
 use App\Services\BaseService;
 use App\Models\CandleCache;
+use Illuminate\Support\Facades\Http;
+use Carbon\Carbon;
 
 /**
  * Fyers Data Service
@@ -15,42 +17,260 @@ use App\Models\CandleCache;
  */
 class FyersDataService extends BaseService
 {
+    private string $baseUrl = 'https://api-t1.fyers.in/data';
+    private FyersAuthService $authService;
+    private RateLimiter $rateLimiter;
+    
+    public function __construct()
+    {
+        $this->authService = new FyersAuthService();
+        $this->rateLimiter = new RateLimiter();
+    }
+    
     /**
-     * Fetch historical candles
+     * Fetch historical candles from Fyers API
      */
     public function fetchCandles(string $symbol, string $timeframe, int $limit = 100): array
     {
-        // TODO: Implement candle fetching from Fyers API
-        $this->logInfo("Fetching {$limit} candles for {$symbol} on {$timeframe} timeframe");
-        return [];
+        $accessToken = $this->authService->getAccessToken();
+        
+        if (!$accessToken) {
+            $this->logWarning('No Fyers access token. Using simulator.');
+            return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
+        }
+        
+        try {
+            // Wait for rate limiter
+            $this->rateLimiter->wait();
+            
+            // Convert timeframe to Fyers format
+            $resolution = $this->convertTimeframe($timeframe);
+            
+            // Calculate date range
+            $rangeTo = Carbon::now()->timestamp;
+            $rangeFrom = Carbon::now()->subDays($this->calculateDays($timeframe, $limit))->timestamp;
+            
+            $response = Http::withHeaders([
+                'Authorization' => "{$accessToken}",
+            ])->get("{$this->baseUrl}/history", [
+                'symbol' => $this->convertSymbol($symbol),
+                'resolution' => $resolution,
+                'date_format' => '0', // Unix timestamp
+                'range_from' => $rangeFrom,
+                'range_to' => $rangeTo,
+                'cont_flag' => '1',
+            ]);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['candles']) && is_array($data['candles'])) {
+                    return $this->formatCandles($data['candles']);
+                }
+            }
+            
+            $this->logError('Fyers API error: ' . $response->body());
+            $this->logInfo('Falling back to simulator');
+            return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
+            
+        } catch (\Exception $e) {
+            $this->logError('Fyers fetch candles exception: ' . $e->getMessage());
+            return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
+        }
     }
 
     /**
-     * Get Bank Nifty spot price
+     * Get Bank Nifty spot price from Fyers
      */
     public function getBankNiftySpotPrice(): float
     {
-        // TODO: Implement spot price fetching
-        $this->logInfo('Fetching Bank Nifty spot price');
-        return 0.0;
+        $accessToken = $this->authService->getAccessToken();
+        
+        if (!$accessToken) {
+            return FyersSimulator::getSpotPrice();
+        }
+        
+        try {
+            $this->rateLimiter->wait();
+            
+            $response = Http::withHeaders([
+                'Authorization' => "{$accessToken}",
+            ])->get("{$this->baseUrl}/quotes", [
+                'symbols' => 'NSE:NIFTYBANK-INDEX',
+            ]);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['d'][0]['v']['lp'])) {
+                    return (float) $data['d'][0]['v']['lp'];
+                }
+            }
+            
+            $this->logError('Fyers spot price error: ' . $response->body());
+            return FyersSimulator::getSpotPrice();
+            
+        } catch (\Exception $e) {
+            $this->logError('Fyers spot price exception: ' . $e->getMessage());
+            return FyersSimulator::getSpotPrice();
+        }
     }
 
     /**
-     * Get option premium (LTP)
+     * Get option premium (LTP) from Fyers
      */
     public function getOptionLTP(string $symbol): float
     {
-        // TODO: Implement option LTP fetching
-        $this->logInfo("Fetching LTP for {$symbol}");
-        return 0.0;
+        $accessToken = $this->authService->getAccessToken();
+        
+        if (!$accessToken) {
+            // Extract strike and type from symbol for simulator
+            return $this->simulateOptionLTP($symbol);
+        }
+        
+        try {
+            $this->rateLimiter->wait();
+            
+            $response = Http::withHeaders([
+                'Authorization' => "{$accessToken}",
+            ])->get("{$this->baseUrl}/quotes", [
+                'symbols' => $symbol,
+            ]);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['d'][0]['v']['lp'])) {
+                    return (float) $data['d'][0]['v']['lp'];
+                }
+            }
+            
+            $this->logError('Fyers option LTP error: ' . $response->body());
+            return $this->simulateOptionLTP($symbol);
+            
+        } catch (\Exception $e) {
+            $this->logError('Fyers option LTP exception: ' . $e->getMessage());
+            return $this->simulateOptionLTP($symbol);
+        }
     }
-
+    
+    /**
+     * Convert timeframe to Fyers resolution format
+     */
+    private function convertTimeframe(string $timeframe): string
+    {
+        return match($timeframe) {
+            '1m', '1' => '1',
+            '5m', '5' => '5',
+            '15m', '15' => '15',
+            '30m', '30' => '30',
+            '1H', '60' => '60',
+            '1D', 'D' => 'D',
+            '1W', 'W' => 'W',
+            '1M', 'M' => 'M',
+            default => '15'
+        };
+    }
+    
+    /**
+     * Convert symbol to Fyers format
+     */
+    private function convertSymbol(string $symbol): string
+    {
+        // Already in correct format if contains NSE:
+        if (str_contains($symbol, 'NSE:')) {
+            return $symbol;
+        }
+        
+        return "NSE:{$symbol}";
+    }
+    
+    /**
+     * Calculate days needed for candle limit
+     */
+    private function calculateDays(string $timeframe, int $limit): int
+    {
+        return match($timeframe) {
+            '1m', '1' => ceil($limit / (60 * 6.5)),
+            '5m', '5' => ceil($limit / (12 * 6.5)),
+            '15m', '15' => ceil($limit / (4 * 6.5)),
+            '30m', '30' => ceil($limit / (2 * 6.5)),
+            '1H', '60' => ceil($limit / 6.5),
+            '1D', 'D' => $limit,
+            default => ceil($limit / (4 * 6.5))
+        };
+    }
+    
+    /**
+     * Format Fyers candles to standard format
+     */
+    private function formatCandles(array $candles): array
+    {
+        $formatted = [];
+        
+        foreach ($candles as $candle) {
+            if (count($candle) >= 5) {
+                $timestamp = $candle[0];
+                $formatted[] = [
+                    'timestamp' => $timestamp,
+                    'datetime' => Carbon::createFromTimestamp($timestamp)->format('Y-m-d H:i:s'),
+                    'open' => (float) $candle[1],
+                    'high' => (float) $candle[2],
+                    'low' => (float) $candle[3],
+                    'close' => (float) $candle[4],
+                    'volume' => isset($candle[5]) ? (int) $candle[5] : 0,
+                ];
+            }
+        }
+        
+        return $formatted;
+    }
+    
+    /**
+     * Simulate option LTP when API unavailable
+     */
+    private function simulateOptionLTP(string $symbol): float
+    {
+        // Extract strike and type from symbol
+        // Example: NSE:BANKNIFTY26JUN50000CE
+        preg_match('/(\d{5,6})(CE|PE)/', $symbol, $matches);
+        
+        if (count($matches) >= 3) {
+            $strike = (float) $matches[1];
+            $type = $matches[2];
+            $spot = $this->getBankNiftySpotPrice();
+            
+            return FyersSimulator::getOptionPremium($spot, $strike, $type, 5);
+        }
+        
+        return 50.0; // Default fallback
+    }
+    
     /**
      * Validate candle data
      */
     protected function validateCandles(array $candles): bool
     {
-        // TODO: Implement validation logic from TRADE_PLACEMENT_LOGIC.md
-        return false;
+        if (empty($candles)) {
+            return false;
+        }
+        
+        foreach ($candles as $candle) {
+            if (!isset($candle['open'], $candle['high'], $candle['low'], $candle['close'])) {
+                return false;
+            }
+            
+            // High should be highest
+            if ($candle['high'] < $candle['open'] || $candle['high'] < $candle['close']) {
+                return false;
+            }
+            
+            // Low should be lowest
+            if ($candle['low'] > $candle['open'] || $candle['low'] > $candle['close']) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 }

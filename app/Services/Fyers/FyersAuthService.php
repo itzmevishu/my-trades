@@ -3,6 +3,8 @@
 namespace App\Services\Fyers;
 
 use App\Services\BaseService;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Fyers Authentication Service
@@ -14,32 +16,114 @@ use App\Services\BaseService;
  */
 class FyersAuthService extends BaseService
 {
+    private string $baseUrl = 'https://api-t1.fyers.in/api/v3';
+    
     /**
-     * Authenticate with Fyers API
+     * Generate auth URL for user to login
      */
-    public function authenticate(): bool
+    public function generateAuthUrl(): string
     {
-        // TODO: Implement OAuth2 flow
-        $this->logInfo('Fyers authentication not yet implemented');
-        return false;
+        $clientId = setting('fyers_client_id');
+        $redirectUri = setting('fyers_redirect_uri');
+        $state = bin2hex(random_bytes(16));
+        
+        Cache::put('fyers_auth_state', $state, now()->addMinutes(10));
+        
+        $params = http_build_query([
+            'client_id' => $clientId,
+            'redirect_uri' => $redirectUri,
+            'response_type' => 'code',
+            'state' => $state,
+            'scope' => 'openid profile orders',
+        ]);
+        
+        return "https://api-t1.fyers.in/api/v3/generate-authcode?{$params}";
     }
-
+    
     /**
-     * Refresh access token
+     * Exchange auth code for access token
      */
-    public function refreshToken(): bool
+    public function exchangeAuthCode(string $authCode): array
     {
-        // TODO: Implement token refresh logic
-        $this->logInfo('Token refresh not yet implemented');
-        return false;
+        $clientId = setting('fyers_client_id');
+        $secretKey = setting('fyers_secret_key');
+        
+        try {
+            $response = Http::post("{$this->baseUrl}/validate-authcode", [
+                'grant_type' => 'authorization_code',
+                'appIdHash' => hash('sha256', $clientId . ':' . $secretKey),
+                'code' => $authCode,
+            ]);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                $accessToken = $data['access_token'] ?? null;
+                
+                if ($accessToken) {
+                    // Store token in cache (valid for 24 hours)
+                    Cache::put('fyers_access_token', $accessToken, now()->addHours(23));
+                    $this->logInfo('Fyers authentication successful');
+                    
+                    return ['success' => true, 'token' => $accessToken];
+                }
+            }
+            
+            $this->logError('Fyers auth failed: ' . $response->body());
+            return ['success' => false, 'error' => 'Authentication failed'];
+            
+        } catch (\Exception $e) {
+            $this->logError('Fyers auth exception: ' . $e->getMessage());
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
-
+    
+    /**
+     * Get access token from cache
+     */
+    public function getAccessToken(): ?string
+    {
+        return Cache::get('fyers_access_token');
+    }
+    
     /**
      * Check if token is valid
      */
     public function isTokenValid(): bool
     {
-        // TODO: Implement token validation
+        return Cache::has('fyers_access_token');
+    }
+    
+    /**
+     * Revoke access token (logout)
+     */
+    public function revokeToken(): bool
+    {
+        Cache::forget('fyers_access_token');
+        Cache::forget('fyers_auth_state');
+        $this->logInfo('Fyers token revoked');
+        return true;
+    }
+    
+    /**
+     * Authenticate with Fyers API (legacy method)
+     */
+    public function authenticate(): bool
+    {
+        if ($this->isTokenValid()) {
+            $this->logInfo('Fyers token already valid');
+            return true;
+        }
+        
+        $this->logWarning('Fyers token not found. Generate auth URL and complete OAuth flow.');
+        return false;
+    }
+    
+    /**
+     * Refresh access token (not supported by Fyers v3 - requires re-auth)
+     */
+    public function refreshToken(): bool
+    {
+        $this->logWarning('Fyers v3 does not support token refresh. User must re-authenticate daily.');
         return false;
     }
 }
