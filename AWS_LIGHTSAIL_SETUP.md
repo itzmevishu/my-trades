@@ -64,9 +64,10 @@
 
 5. Select a blueprint:
    ✅ Click "Apps + OS" tab
-   ✅ Select "LAMP (PHP 8)" - Version 8.5.7
-   ✅ This includes: Linux + Apache + MySQL + PHP 8.x
+   ✅ Select "LAMP (PHP 8)" - AWS managed LAMP stack
+   ✅ This includes: Ubuntu + Apache + MySQL + PHP 8.x
    ⚠️ We'll install Composer + Redis manually (takes 10 extra minutes)
+   📁 Web root will be: /var/www/html (not Bitnami paths)
 
 6. Enable Automatic Snapshots:
    ✅ Turn this ON (₹40/month, worth it for backups)
@@ -185,11 +186,16 @@ redis-cli ping
 sudo apt install -y git
 
 # 5. Install PHP extensions needed by Laravel
-sudo apt install -y php8.2-cli php8.2-mbstring php8.2-xml php8.2-bcmath \
-  php8.2-curl php8.2-zip php8.2-redis php8.2-mysql
+# Note: Your system has PHP 8.5, so use php8.5-* packages
+sudo apt install -y php8.5-cli php8.5-mbstring php8.5-xml php8.5-dom \
+  php8.5-intl php8.5-bcmath php8.5-curl php8.5-zip php8.5-redis php8.5-mysql
 
 # 6. Restart Apache to load new extensions
 sudo systemctl restart apache2
+
+# 7. Verify critical extensions are loaded
+php -m | grep -E 'intl|dom|mbstring|curl|mysql'
+# Should show all 5 extensions ✅
 ```
 
 ---
@@ -197,15 +203,15 @@ sudo systemctl restart apache2
 ### STEP 7: Deploy Your Application (15 minutes)
 
 ```bash
-# 1. Navigate to web root
-cd /opt/bitnami/apache2/htdocs
+# 1. Navigate to web root (AWS LAMP uses /var/www/html)
+cd /var/www/html
 
 # 2. Clone your repository
 sudo git clone https://github.com/itzmevishu/my-trades.git
 cd my-trades
 
-# 3. Set ownership (bitnami user runs Apache)
-sudo chown -R bitnami:daemon /opt/bitnami/apache2/htdocs/my-trades
+# 3. Set ownership (www-data user runs Apache on Ubuntu)
+sudo chown -R www-data:www-data /var/www/html/my-trades
 
 # 4. Install dependencies
 composer install --optimize-autoloader --no-dev
@@ -232,13 +238,9 @@ nano .env
 # 7. Generate application key
 php artisan key:generate
 
-# 8. Set permissions
-sudo chown -R bitnami:daemon storage bootstrap/cache
-sudo chmod -R 775 storage bootstrap/cache
-
-# 9. Create database
+# 9. Create database (MariaDB - MySQL compatible)
 mysql -u root -p
-# Enter the password from bitnami_application_password
+# If no password set, just press Enter, or use: sudo mysql
 REDIS_PASSWORD=null
 REDIS_PORT=6379
 CACHE_DRIVER=redis
@@ -260,25 +262,27 @@ SEBI_COMPLIANT_MODE=true
 **Save and exit:** `Ctrl+X`, then `Y`, then `Enter`
 
 ```bash
-# 6. Get database password
-cat /home/bitnami/bitnami_credentials
-# Copy the MySQL root password and add to .env
+# 6. For AWS LAMP, MySQL root password is in:
+#    Option 1: Check SSH welcome message when you first logged in
+#    Option 2: Set your own password (recommended):
+sudo mysql
+# In MySQL prompt:
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'YourStrongPassword123!';
+FLUSH PRIVILEGES;
+EXIT;
 
-# Re-edit .env
+# 7. Update .env with your MySQL password
 nano .env
-# Add MySQL password to DB_PASSWORD
+# Set: DB_PASSWORD=YourStrongPassword123!
 # Save: Ctrl+X, Y, Enter
 
-# 7. Generate application key
-php artisan key:generate
-
-# 8. Set permissions
-sudo chown -R bitnami:daemon storage bootstrap/cache
+# 9. Set permissions
+sudo chown -R www-data:www-data storage bootstrap/cache
 sudo chmod -R 775 storage bootstrap/cache
 
-# 9. Create database
-mysql -u root -p
-# Enter the password from bitnami_credentials
+# 10. Create database (MariaDB - MySQL compatible)
+sudo mysql
+# Or if password is set: mysql -u root -p
 ```
 
 **In MySQL prompt:**
@@ -289,18 +293,18 @@ EXIT;
 ```
 
 ```bash
-# 10. Run migrations
+# 11. Run migrations
 php artisan migrate --force
 
-# 11. Seed settings
+# 12. Seed settings
 php artisan db:seed --class=SettingsSeeder
 
-# 12. Cache configuration for production
+# 14. Cache configuration for production
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-# 13. Test the app
+# 15. Test the app
 php artisan tinker
 >>> \DB::connection()->getPdo();
 # Should show PDO object - database connected! ✅
@@ -309,24 +313,30 @@ php artisan tinker
 
 ---
 
-### STEP 7: Configure Web Server (10 minutes)
+### STEP 8: Configure Web Server (10 minutes)
 
 ```bash
-# 1. Edit Apache vhost configuration
-sudo nano /opt/bitnami/apache/conf/vhosts/htdocs-vhost.conf
+# 1. Edit Apache default site configuration
+sudo nano /etc/apache2/sites-available/000-default.conf
 
 # 2. Find DocumentRoot line and change it:
-# FROM: DocumentRoot "/opt/bitnami/apache/htdocs"
-# TO:   DocumentRoot "/opt/bitnami/projects/my-trades/public"
+# FROM: DocumentRoot /var/www/html
+# TO:   DocumentRoot /var/www/html/my-trades/public
 
-# Also update Directory directive:
-# FROM: <Directory "/opt/bitnami/apache/htdocs">
-# TO:   <Directory "/opt/bitnami/projects/my-trades/public">
+# 3. Add Directory block after DocumentRoot (if not present):
+<Directory /var/www/html/my-trades/public>
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
 
-# 3. Save: Ctrl+X, Y, Enter
+# 4. Save: Ctrl+X, Y, Enter
 
-# 4. Restart Apache
-sudo /opt/bitnami/ctlscript.sh restart apache
+# 5. Enable mod_rewrite (required for Laravel)
+sudo a2enmod rewrite
+
+# 6. Restart Apache
+sudo systemctl restart apache2
 
 # 5. Test in browser
 # Go to: http://YOUR_STATIC_IP
@@ -338,11 +348,11 @@ sudo /opt/bitnami/ctlscript.sh restart apache
 ### STEP 9: Set Up Laravel Scheduler (5 minutes)
 
 ```bash
-# 1. Edit crontab
-crontab -e
+# 1. Edit crontab for www-data user
+sudo crontab -u www-data -e
 
 # 2. Add this line at the bottom:
-* * * * * cd /opt/bitnami/apache2/htdocs/my-trades && php artisan schedule:run >> /dev/null 2>&1
+* * * * * cd /var/www/html/my-trades && php artisan schedule:run >> /dev/null 2>&1
 
 # 3. Save: Ctrl+X, Y, Enter
 
@@ -368,16 +378,16 @@ sudo nano /etc/supervisor/conf.d/laravel-worker.conf
 ```ini
 [program:laravel-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /opt/bitnami/apache2/htdocs/my-trades/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+command=php /var/www/html/my-trades/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
 autostart=true
 autorestart=true
 stopasgroup=true
 killasgroup=true
-user=bitnami
+user=www-data
 numprocs=2
 redirect_stderr=true
-stdout_logfile=/opt/bitnami/projects/my-trades/storage/logs/worker.log
-stopwaitsecs=3600apache2/htdoc
+stdout_logfile=/var/www/html/my-trades/storage/logs/worker.log
+stopwaitsecs=3600
 ```
 
 ```bash
@@ -454,8 +464,7 @@ php artisan config:cache
 
 ```bash
 # SSH into your instance
-cd /opt/bitnami/projects/my-trades
-apache2/htdocs/my-trades
+cd /var/www/html/my-trades
 
 # Pull latest changes
 git pull origin main
@@ -486,11 +495,10 @@ sudo systemctl restart apache2
 
 ```bash
 # Laravel logs
-tail -f /opt/bitnami/projects/my-trades/storage/logs/laravel.log
-apache2/htdocs/my-trades/storage/logs/laravel.log
+tail -f /var/www/html/my-trades/storage/logs/laravel.log
 
 # Worker logs
-tail -f /opt/bitnami/apache2/htdocs/my-trades/storage/logs/worker.log
+tail -f /var/www/html/my-trades/storage/logs/worker.log
 
 # Apache error logs
 sudo tail -f /var/log/apache2/error.log
@@ -616,10 +624,7 @@ sudo systemctl status mysql
 mysql -u root -p
 
 # Check .env database settings
-cat /opt/bitnami/apache2/htdoc
-
-# Check .env database settings
-cat /opt/bitnami/projects/my-trades/.env | grep DB_
+cat /var/www/html/my-trades/.env | grep DB_
 
 # Recreate config cache
 php artisan config:clear
@@ -701,11 +706,8 @@ sudo systemctl status redis-server
 # View Laravel logs
 tail -f /opt/bitnami/apache2/htdocs/my-trades/storage/logs/laravel.log
 
-# Update app
-cd /opt/bitnami/apache2/htdocs/my-trades && git pull && composer install && php artisan migrate --force && php artisan config:cache && sudo systemctl restart apache2
-
-# Update app
-cd /opt/bitnami/projects/my-trades && git pull && composer install && php artisan migrate --force && php artisan config:cache
+# Update app (one-line command)
+cd /var/www/html/my-trades && git pull && composer install && php artisan migrate --force && php artisan config:cache && sudo systemctl restart apache2
 ```
 
 ---

@@ -32,6 +32,22 @@ class User extends Authenticatable
 
     public function canAccessPanel(\Filament\Panel $panel): bool
     {
-        return true; // Allow all authenticated users
+        \Log::info('[canAccessPanel] Method called', [
+            'user_id' => $this->id,
+            'user_email' => $this->email,
+            'panel_id' => $panel->getId(),
+            'auth_check' => \Auth::check(),
+            'auth_user_id' => \Auth::id(),
+            'session_id' => session()->getId(),
+        ]);
+        
+        $canAccess = true;
+        
+        \Log::info('[canAccessPanel] Returning', [
+            'user_id' => $this->id,
+            'can_access' => $canAccess,
+        ]);
+        
+        return $canAccess;
     }
 }
