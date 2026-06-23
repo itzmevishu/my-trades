@@ -7,16 +7,13 @@
 
 ## 🔍 Laravel Cloud Static IP Support
 
-### Current Status: **NEEDS VERIFICATION**
+### Current Status: **❌ NOT SUPPORTED** (Confirmed)
 
-Laravel Cloud is relatively new (launched 2024). Static IP support needs to be confirmed.
+Laravel Cloud does **NOT** provide static IP addresses for applications. This is a confirmed limitation.
 
-**Action Required:**
-```bash
-# Contact Laravel Cloud support
-# Ask: "Does Laravel Cloud provide static IP addresses for applications?"
-# Support: https://cloud.laravel.com/support
-```
+**Impact:** Cannot use Laravel Cloud for SEBI-compliant Fyers API trading.
+
+**Solution:** Switch to AWS Lightsail (recommended) or other alternatives below.
 
 ---
 
@@ -123,20 +120,19 @@ php artisan view:cache
 
 ## 🎯 My Recommendation
 
-### Scenario 1: Laravel Cloud Supports Static IP
-**Action:** Use Laravel Cloud (₹3,000/month)
-- ✅ Best developer experience
-- ✅ Fully managed
-- ✅ Auto-scaling
-- ✅ Worth the premium for ease
+### ✅ CONFIRMED: Use AWS Lightsail (₹400/month)
 
-### Scenario 2: Laravel Cloud Doesn't Support Static IP
-**Action:** Switch to AWS Lightsail (₹400/month)
-- ✅ 87% cost savings (₹2,600/month saved)
-- ✅ Static IP guaranteed
-- ✅ Laravel-optimized blueprint
-- ✅ Still very easy to use
+Laravel Cloud doesn't support static IP, so **AWS Lightsail is your best choice**:
+
+- ✅ **87% cost savings** (₹2,600/month saved vs Laravel Cloud)
+- ✅ **Static IP guaranteed** (automatic)
+- ✅ **Laravel-optimized blueprint** (pre-configured)
+- ✅ **FREE for first 3 months** (trial period)
+- ✅ **Still very easy to use** (30-minute setup)
+- ✅ **Mumbai data center** (low latency)
 - ⚠️ Manual scaling (but you don't need it for 1 trade/day)
+
+**This is actually BETTER than Laravel Cloud for your use case!**
 
 ---
 
@@ -339,23 +335,34 @@ curl ifconfig.me
 ---
 
 ## 🎯 Action Plan
+ (UPDATED - Laravel Cloud Not Supported)
 
-### Today:
-1. **Email Laravel Cloud support** (takes 2 minutes)
-2. **Check documentation** (takes 10 minutes)
-3. **If NO static IP → Sign up for AWS Lightsail** (takes 5 minutes)
+### Today (RIGHT NOW):
+1. **Sign up for AWS Lightsail** (takes 5 minutes)
+   - Go to https://lightsail.aws.amazon.com/
+   - Create AWS account if needed
+   - Choose Mumbai (ap-south-1) region
+
+2. **Create Lightsail instance** (takes 10 minutes)
+   - Click "Create Instance"
+   - Choose "Laravel" blueprint
+   - Select $3.50/month plan
+   - Instance auto-starts with static IP
+
+3. **Note your static IP** (immediate)
+   - Go to Networking tab
+   - Create and attach static IP
+   - Copy the IP address (e.g., 13.232.45.67)
 
 ### Tomorrow:
-1. Wait for Laravel Cloud response
-2. If NO → Deploy to Lightsail (30 minutes)
-3. Get static IP
-4. Update Fyers dashboard
+1. **Deploy your app** (30 minutes using my guide below)
+2. **Update Fyers dashboard** with static IP
+3. **Test API connectivity**
 
 ### By March 31:
-1. Confirm static IP working
-2. Test API connectivity
-3. Complete remaining compliance items
-
+1. Complete SEBI compliance implementation
+2. Test end-to-end order flow
+3. Ready for trading ✅
 ---
 
 ## 💡 Pro Tips
