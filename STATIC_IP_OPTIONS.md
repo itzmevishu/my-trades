@@ -126,9 +126,9 @@ Laravel Cloud doesn't support static IP, so **AWS Lightsail is your best choice*
 
 - ✅ **87% cost savings** (₹2,600/month saved vs Laravel Cloud)
 - ✅ **Static IP guaranteed** (automatic)
-- ✅ **Laravel-optimized blueprint** (pre-configured)
+- ✅ **LAMP stack** (PHP 8.2 + MySQL + Apache pre-configured)
 - ✅ **FREE for first 3 months** (trial period)
-- ✅ **Still very easy to use** (30-minute setup)
+- ✅ **Still easy to use** (45-minute setup with manual Composer/Redis install)
 - ✅ **Mumbai data center** (low latency)
 - ⚠️ Manual scaling (but you don't need it for 1 trade/day)
 

@@ -3,8 +3,8 @@
 
 **Status:** PRIMARY HOSTING SOLUTION (Laravel Cloud doesn't support static IP)  
 **Cost:** ₹400/month (FREE for first 3 months)  
-**Setup Time:** 30-45 minutes  
-**Difficulty:** Easy
+**Setup Time:** 45-60 minutes  
+**Difficulty:** Easy-Medium (LAMP + manual Laravel setup)
 
 ---
 
@@ -15,7 +15,8 @@
 **AWS Lightsail is actually BETTER for your use case:**
 - ✅ 87% cheaper (₹400 vs ₹3,000/month)
 - ✅ Static IP included and guaranteed
-- ✅ Pre-configured Laravel blueprint
+- ✅ LAMP stack (PHP 8.2 + MySQL + Apache)
+- ✅ Manual Composer + Redis setup (10 extra minutes)
 - ✅ FREE first 3 months
 - ✅ Perfect for 1-trade-per-day system
 - ✅ Mumbai data center (low latency to NSE)
@@ -63,7 +64,9 @@
 
 5. Select a blueprint:
    ✅ Click "Apps + OS" tab
-   ✅ Select "Laravel" (has PHP, MySQL, Redis pre-installed!)
+   ✅ Select "LAMP (PHP 8)" - Version 8.5.7
+   ✅ This includes: Linux + Apache + MySQL + PHP 8.x
+   ⚠️ We'll install Composer + Redis manually (takes 10 extra minutes)
 
 6. Enable Automatic Snapshots:
    ✅ Turn this ON (₹40/month, worth it for backups)
@@ -149,20 +152,60 @@
 
 ---
 
-### STEP 6: Deploy Your Application (15 minutes)
+### STEP 6: Install Required Software (10 minutes)
 
 ```bash
 # You're now SSH'd into your Lightsail instance
 
-# 1. Navigate to projects directory
-cd /opt/bitnami/projects
+# 1. Update package lists
+sudo apt update
+
+# 2. Install Composer
+cd ~
+curl -sS https://getcomposer.org/installer -o composer-setup.php
+sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm composer-setup.php
+
+# Verify Composer
+composer --version
+# Should show: Composer version 2.x.x ✅
+
+# 3. Install Redis
+sudo apt install -y redis-server
+
+# Start Redis and enable on boot
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+
+# Verify Redis
+redis-cli ping
+# Should return: PONG ✅
+
+# 4. Install Git (if not already installed)
+sudo apt install -y git
+
+# 5. Install PHP extensions needed by Laravel
+sudo apt install -y php8.2-cli php8.2-mbstring php8.2-xml php8.2-bcmath \
+  php8.2-curl php8.2-zip php8.2-redis php8.2-mysql
+
+# 6. Restart Apache to load new extensions
+sudo systemctl restart apache2
+```
+
+---
+
+### STEP 7: Deploy Your Application (15 minutes)
+
+```bash
+# 1. Navigate to web root
+cd /opt/bitnami/apache2/htdocs
 
 # 2. Clone your repository
 sudo git clone https://github.com/YOUR_USERNAME/my-trades.git
 cd my-trades
 
-# 3. Set ownership
-sudo chown -R bitnami:daemon /opt/bitnami/projects/my-trades
+# 3. Set ownership (bitnami user runs Apache)
+sudo chown -R bitnami:daemon /opt/bitnami/apache2/htdocs/my-trades
 
 # 4. Install dependencies
 composer install --optimize-autoloader --no-dev
@@ -178,24 +221,24 @@ nano .env
 APP_NAME="BankNifty AI Trading"
 APP_ENV=production
 APP_DEBUG=false
-APP_TIMEZONE=Asia/Kolkata
+APP_TIMEZONE=Asia/Kolkataapplication_password
+# Copy the MySQL root password and add to .env
 
-# Generate this next
-APP_KEY=
+# Re-edit .env
+nano .env
+# Add MySQL password to DB_PASSWORD
+# Save: Ctrl+X, Y, Enter
 
-# Your Lightsail static IP
-STATIC_IP_ADDRESS=13.232.45.67
+# 7. Generate application key
+php artisan key:generate
 
-# Database (Lightsail comes with MySQL)
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=my_trades
-DB_USERNAME=root
-DB_PASSWORD=  # Get this from /home/bitnami/bitnami_credentials
+# 8. Set permissions
+sudo chown -R bitnami:daemon storage bootstrap/cache
+sudo chmod -R 775 storage bootstrap/cache
 
-# Redis (Lightsail has Redis pre-installed)
-REDIS_HOST=127.0.0.1
+# 9. Create database
+mysql -u root -p
+# Enter the password from bitnami_application_password
 REDIS_PASSWORD=null
 REDIS_PORT=6379
 CACHE_DRIVER=redis
@@ -292,14 +335,14 @@ sudo /opt/bitnami/ctlscript.sh restart apache
 
 ---
 
-### STEP 8: Set Up Laravel Scheduler (5 minutes)
+### STEP 9: Set Up Laravel Scheduler (5 minutes)
 
 ```bash
 # 1. Edit crontab
 crontab -e
 
 # 2. Add this line at the bottom:
-* * * * * cd /opt/bitnami/projects/my-trades && php artisan schedule:run >> /dev/null 2>&1
+* * * * * cd /opt/bitnami/apache2/htdocs/my-trades && php artisan schedule:run >> /dev/null 2>&1
 
 # 3. Save: Ctrl+X, Y, Enter
 
@@ -310,12 +353,11 @@ crontab -l
 
 ---
 
-### STEP 9: Set Up Queue Workers (5 minutes)
+### STEP 10: Set Up Queue Workers (5 minutes)
 
 ```bash
 # 1. Install supervisor
-sudo apt-get update
-sudo apt-get install -y supervisor
+sudo apt install -y supervisor
 
 # 2. Create worker configuration
 sudo nano /etc/supervisor/conf.d/laravel-worker.conf
@@ -326,7 +368,7 @@ sudo nano /etc/supervisor/conf.d/laravel-worker.conf
 ```ini
 [program:laravel-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /opt/bitnami/projects/my-trades/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+command=php /opt/bitnami/apache2/htdocs/my-trades/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
 autostart=true
 autorestart=true
 stopasgroup=true
@@ -335,7 +377,7 @@ user=bitnami
 numprocs=2
 redirect_stderr=true
 stdout_logfile=/opt/bitnami/projects/my-trades/storage/logs/worker.log
-stopwaitsecs=3600
+stopwaitsecs=3600apache2/htdoc
 ```
 
 ```bash
@@ -355,7 +397,7 @@ sudo supervisorctl status
 ---
 
 ### STEP 10: Whitelist IP in Fyers Dashboard (5 minutes)
-
+1
 ```bash
 1. Login to https://fyers.in/web/api-dashboard
 
@@ -413,6 +455,7 @@ php artisan config:cache
 ```bash
 # SSH into your instance
 cd /opt/bitnami/projects/my-trades
+apache2/htdocs/my-trades
 
 # Pull latest changes
 git pull origin main
@@ -432,6 +475,8 @@ php artisan view:cache
 # Restart queue workers
 sudo supervisorctl restart laravel-worker:*
 
+# Restart Apache
+sudo systemctl restart apache2
 # Done! ✅
 ```
 
@@ -442,16 +487,16 @@ sudo supervisorctl restart laravel-worker:*
 ```bash
 # Laravel logs
 tail -f /opt/bitnami/projects/my-trades/storage/logs/laravel.log
+apache2/htdocs/my-trades/storage/logs/laravel.log
 
 # Worker logs
-tail -f /opt/bitnami/projects/my-trades/storage/logs/worker.log
+tail -f /opt/bitnami/apache2/htdocs/my-trades/storage/logs/worker.log
 
 # Apache error logs
-sudo tail -f /opt/bitnami/apache/logs/error_log
+sudo tail -f /var/log/apache2/error.log
 
 # Apache access logs
-sudo tail -f /opt/bitnami/apache/logs/access_log
-
+sudo tail -f /var/log/apache2/access.
 # Check queue workers
 sudo supervisorctl status
 
@@ -534,14 +579,14 @@ redis-cli CONFIG REWRITE
 ```
 
 ### Issue: 500 Error on website
-```bash
-# Check Laravel logs
-tail -f /opt/bitnami/projects/my-trades/storage/logs/laravel.log
+```bashapache2/htdocs/my-trades/storage/logs/laravel.log
 
 # Check Apache logs
-sudo tail -f /opt/bitnami/apache/logs/error_log
+sudo tail -f /var/log/apache2/error.log
 
 # Check permissions
+sudo chown -R bitnami:daemon /opt/bitnami/apache2/htdocs/my-trades/storage
+sudo chmod -R 775 /opt/bitnami/apache2/htdoc
 sudo chown -R bitnami:daemon /opt/bitnami/projects/my-trades/storage
 sudo chmod -R 775 /opt/bitnami/projects/my-trades/storage
 
@@ -559,19 +604,19 @@ sudo supervisorctl status
 sudo supervisorctl restart laravel-worker:*
 
 # Check Redis connection
-redis-cli ping
-
-# Check worker logs
-tail -f /opt/bitnami/projects/my-trades/storage/logs/worker.log
+redis-cli pingapache2/htdocs/my-trades/storage/logs/worker.log
 ```
 
 ### Issue: Database connection failed
 ```bash
 # Check MySQL is running
-sudo /opt/bitnami/ctlscript.sh status mysql
+sudo systemctl status mysql
 
 # Test MySQL connection
 mysql -u root -p
+
+# Check .env database settings
+cat /opt/bitnami/apache2/htdoc
 
 # Check .env database settings
 cat /opt/bitnami/projects/my-trades/.env | grep DB_
@@ -639,17 +684,25 @@ Before going live:
 
 **Laravel on Lightsail:**
 - Bitnami Laravel Stack: https://docs.bitnami.com/aws/apps/laravel/
+Apache
+sudo systemctl restart apache2
 
-**Quick Commands Reference:**
-```bash
-# Restart everything
-sudo /opt/bitnami/ctlscript.sh restart
+# Restart MySQL
+sudo systemctl restart mysql
+
+# Restart Redis
+sudo systemctl restart redis-server
 
 # Check all services status
-sudo /opt/bitnami/ctlscript.sh status
+sudo systemctl status apache2
+sudo systemctl status mysql
+sudo systemctl status redis-server
 
 # View Laravel logs
-tail -f /opt/bitnami/projects/my-trades/storage/logs/laravel.log
+tail -f /opt/bitnami/apache2/htdocs/my-trades/storage/logs/laravel.log
+
+# Update app
+cd /opt/bitnami/apache2/htdocs/my-trades && git pull && composer install && php artisan migrate --force && php artisan config:cache && sudo systemctl restart apache2
 
 # Update app
 cd /opt/bitnami/projects/my-trades && git pull && composer install && php artisan migrate --force && php artisan config:cache
