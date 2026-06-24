@@ -9,6 +9,7 @@ use App\Services\Analysis\EMACalculator;
 use App\Services\Analysis\PatternDetector;
 use App\Services\Claude\ClaudeAPIService;
 use App\Models\Trade;
+use App\Models\ScanLog;
 use Carbon\Carbon;
 
 /**
@@ -62,17 +63,35 @@ class PaperTradingService extends BaseService
 
         // Check if we can trade today
         if (!$this->canTradeToday()) {
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'outside_window',
+                'rejection_reason' => 'Market holiday or weekend',
+            ]);
             return null;
         }
 
         // Check if we're in trading window
         if (!$this->isInTradingWindow()) {
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'outside_window',
+                'rejection_reason' => 'Outside trading window (9:15 AM - 3:30 PM)',
+            ]);
             return null;
         }
 
         // Check if we already have a trade today
         if ($this->hasTradedToday()) {
             $this->logInfo('Already traded today, skipping scan');
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'already_traded',
+                'rejection_reason' => '1 trade per day limit reached',
+            ]);
             return null;
         }
 
@@ -97,6 +116,13 @@ class PaperTradingService extends BaseService
         
         if (!$patternResult) {
             $this->logInfo('No valid pattern detected');
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'no_pattern',
+                'current_price' => $candles[count($candles) - 1]['close'],
+                'rejection_reason' => 'No valid candlestick pattern found',
+            ]);
             return null;
         }
 
@@ -115,6 +141,19 @@ class PaperTradingService extends BaseService
         if ($confluenceCount < 1) {
             $this->logInfo('Insufficient EMA confluence', [
                 'confluence_count' => $confluenceCount
+            ]);
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'rejected_ema',
+                'pattern_detected' => $patternResult['pattern'],
+                'pattern_direction' => $patternResult['direction'],
+                'current_price' => $currentPrice,
+                'ema_20' => $emas['ema_20'],
+                'ema_100' => $emas['ema_100'],
+                'ema_200' => $emas['ema_200'],
+                'ema_confluence_count' => $confluenceCount,
+                'rejection_reason' => "Pattern found but price not near EMAs (confluence: {$confluenceCount})",
             ]);
             return null;
         }
@@ -153,6 +192,20 @@ class PaperTradingService extends BaseService
             $this->logInfo('Score below threshold', [
                 'score' => $claudeScore['score'],
                 'min_required' => $minScore
+            ]);
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'rejected_score',
+                'pattern_detected' => $patternResult['pattern'],
+                'pattern_direction' => $patternResult['direction'],
+                'current_price' => $currentPrice,
+                'ema_20' => $emas['ema_20'],
+                'ema_100' => $emas['ema_100'],
+                'ema_200' => $emas['ema_200'],
+                'ema_confluence_count' => $confluenceCount,
+                'claude_score' => $claudeScore['score'],
+                'rejection_reason' => "Claude score below threshold ({$claudeScore['score']} < {$minScore}). Reason: {$claudeScore['reasoning']}",
             ]);
             return null;
         }
@@ -252,6 +305,22 @@ class PaperTradingService extends BaseService
             'status' => 'open',
             'entry_time' => now()->toTimeString(),
             'entry_slippage_pct' => $orderResult['slippage_pct']
+        ]);
+
+        // Log successful trade execution
+        ScanLog::create([
+            'scan_date' => now()->toDateString(),
+            'scan_time' => now()->toTimeString(),
+            'result' => 'trade_taken',
+            'pattern_detected' => $patternResult['pattern'],
+            'pattern_direction' => $patternResult['direction'],
+            'current_price' => $currentPrice,
+            'ema_20' => $emas['ema_20'],
+            'ema_100' => $emas['ema_100'],
+            'ema_200' => $emas['ema_200'],
+            'ema_confluence_count' => $confluenceCount,
+            'claude_score' => $claudeScore['score'],
+            'trade_id' => $trade->id,
         ]);
 
         return $trade->toArray();

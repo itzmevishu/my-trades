@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Services\Claude\ClaudeAPIService;
 use App\Models\Trade;
+use App\Models\ScanLog;
 use App\Models\DailyReport;
 use Carbon\Carbon;
 
@@ -52,14 +53,31 @@ class TradingReportCommand extends Command
             $this->line("Period: {$startDate} to {$endDate}");
             $this->newLine();
 
+            // Fetch scan logs for the period
+            $scanLogs = ScanLog::whereBetween('scan_date', [$startDate, $endDate])
+                ->orderBy('scan_date', 'asc')
+                ->orderBy('scan_time', 'asc')
+                ->get();
+
+            // Display scan activity first
+            if ($scanLogs->isNotEmpty()) {
+                $this->displayScanActivity($scanLogs);
+                $this->newLine();
+            }
+
             // Fetch trades in date range
             $trades = Trade::where('status', 'closed')
                 ->whereBetween('date', [$startDate, $endDate])
                 ->orderBy('date', 'asc')
                 ->get();
 
+            if ($trades->isEmpty() && $scanLogs->isEmpty()) {
+                $this->warn('⚠️  No activity found for this period');
+                return Command::SUCCESS;
+            }
+
             if ($trades->isEmpty()) {
-                $this->warn('⚠️  No trades found for this period');
+                $this->warn('⚠️  No trades executed in this period (see scan activity above)');
                 return Command::SUCCESS;
             }
 
@@ -238,6 +256,85 @@ class TradingReportCommand extends Command
                 ['Pattern', 'Trades', 'Win Rate', 'Total P&L'],
                 $rows
             );
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Display scan activity statistics
+     */
+    private function displayScanActivity($scanLogs): void
+    {
+        $this->info('🔍 Scan Activity Analysis:');
+        $this->newLine();
+
+        $totalScans = $scanLogs->count();
+        $tradesTaken = $scanLogs->where('result', 'trade_taken')->count();
+        $noPattern = $scanLogs->where('result', 'no_pattern')->count();
+        $rejectedEma = $scanLogs->where('result', 'rejected_ema')->count();
+        $rejectedScore = $scanLogs->where('result', 'rejected_score')->count();
+        $alreadyTraded = $scanLogs->where('result', 'already_traded')->count();
+        $outsideWindow = $scanLogs->where('result', 'outside_window')->count();
+
+        // Calculate percentages
+        $getPercent = function($count) use ($totalScans) {
+            return $totalScans > 0 ? round(($count / $totalScans) * 100, 1) : 0;
+        };
+
+        $this->table(
+            ['Result', 'Count', 'Percentage'],
+            [
+                ['Total Scans', $totalScans, '100%'],
+                ['✅ Trades Taken', $tradesTaken, $getPercent($tradesTaken) . '%'],
+                ['❌ No Pattern Found', $noPattern, $getPercent($noPattern) . '%'],
+                ['❌ EMA Confluence Failed', $rejectedEma, $getPercent($rejectedEma) . '%'],
+                ['❌ Claude Score Too Low', $rejectedScore, $getPercent($rejectedScore) . '%'],
+                ['⚠️  Already Traded', $alreadyTraded, $getPercent($alreadyTraded) . '%'],
+                ['⏰ Outside Window', $outsideWindow, $getPercent($outsideWindow) . '%'],
+            ]
+        );
+        $this->newLine();
+
+        // Show pattern detection breakdown
+        $patternsDetected = $scanLogs->whereNotNull('pattern_detected');
+        if ($patternsDetected->isNotEmpty()) {
+            $this->info('📊 Patterns Detected (including rejected):');
+            $this->newLine();
+
+            $patternBreakdown = [];
+            foreach ($patternsDetected->groupBy('pattern_detected') as $pattern => $logs) {
+                $avgEmaConfluence = round($logs->avg('ema_confluence_count'), 1);
+                $avgClaudeScore = $logs->whereNotNull('claude_score')->isNotEmpty() 
+                    ? round($logs->whereNotNull('claude_score')->avg('claude_score'), 1) 
+                    : 'N/A';
+                
+                $patternBreakdown[] = [
+                    ucwords(str_replace('_', ' ', $pattern)),
+                    $logs->count(),
+                    $avgEmaConfluence,
+                    $avgClaudeScore
+                ];
+            }
+
+            $this->table(
+                ['Pattern', 'Detected', 'Avg EMA Confluence', 'Avg Claude Score'],
+                $patternBreakdown
+            );
+            $this->newLine();
+        }
+
+        // Show top rejection reasons for context
+        if ($rejectedEma > 0 || $rejectedScore > 0) {
+            $this->info('🔍 Why Trades Were Rejected:');
+            $this->newLine();
+            
+            $rejectedLogs = $scanLogs->whereIn('result', ['rejected_ema', 'rejected_score'])->take(5);
+            foreach ($rejectedLogs as $log) {
+                $this->line("  [{$log->scan_time}] {$log->pattern_detected} - {$log->rejection_reason}");
+            }
+            if ($scanLogs->whereIn('result', ['rejected_ema', 'rejected_score'])->count() > 5) {
+                $this->line('  ... and ' . ($scanLogs->whereIn('result', ['rejected_ema', 'rejected_score'])->count() - 5) . ' more');
+            }
             $this->newLine();
         }
     }
