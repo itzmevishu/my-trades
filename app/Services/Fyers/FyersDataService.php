@@ -28,10 +28,28 @@ class FyersDataService extends BaseService
     }
     
     /**
-     * Fetch historical candles from Fyers API
+     * Fetch historical candles from Fyers API (with caching)
      */
     public function fetchCandles(string $symbol, string $timeframe, int $limit = 100): array
     {
+        // Try to get from cache first
+        $cachedCandles = $this->getCachedCandles($symbol, $timeframe, $limit);
+        
+        if (!empty($cachedCandles)) {
+            $this->logInfo('Using cached candles', [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'count' => count($cachedCandles),
+            ]);
+            return $cachedCandles;
+        }
+        
+        // Cache miss - fetch from API
+        $this->logInfo('Cache miss - fetching from Fyers API', [
+            'symbol' => $symbol,
+            'timeframe' => $timeframe,
+        ]);
+        
         $accessToken = $this->authService->getAccessToken();
         
         if (!$accessToken) {
@@ -65,7 +83,12 @@ class FyersDataService extends BaseService
                 $data = $response->json();
                 
                 if (isset($data['candles']) && is_array($data['candles'])) {
-                    return $this->formatCandles($data['candles']);
+                    $formattedCandles = $this->formatCandles($data['candles']);
+                    
+                    // Store in cache
+                    $this->cacheCandles($symbol, $timeframe, $formattedCandles);
+                    
+                    return $formattedCandles;
                 }
             }
             
@@ -272,5 +295,114 @@ class FyersDataService extends BaseService
         }
         
         return true;
+    }
+    
+    /**
+     * Get cached candles from database
+     */
+    private function getCachedCandles(string $symbol, string $timeframe, int $limit): array
+    {
+        // Determine cache TTL based on timeframe
+        $cacheTTL = $this->getCacheTTL($timeframe);
+        $cutoffTime = Carbon::now()->subMinutes($cacheTTL);
+        
+        // Get cached candles
+        $cached = CandleCache::where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->where('candle_timestamp', '>=', $cutoffTime)
+            ->orderBy('candle_timestamp', 'desc')
+            ->limit($limit)
+            ->get();
+        
+        // Need at least 90% of requested candles for valid cache
+        if ($cached->count() < ($limit * 0.9)) {
+            return [];
+        }
+        
+        // Convert to array format
+        return $cached->map(function ($candle) {
+            return [
+                'timestamp' => $candle->candle_timestamp->timestamp,
+                'datetime' => $candle->candle_timestamp->format('Y-m-d H:i:s'),
+                'open' => (float) $candle->open,
+                'high' => (float) $candle->high,
+                'low' => (float) $candle->low,
+                'close' => (float) $candle->close,
+                'volume' => (int) $candle->volume,
+            ];
+        })->toArray();
+    }
+    
+    /**
+     * Store candles in cache
+     */
+    private function cacheCandles(string $symbol, string $timeframe, array $candles): void
+    {
+        try {
+            foreach ($candles as $candle) {
+                CandleCache::updateOrCreate(
+                    [
+                        'symbol' => $symbol,
+                        'timeframe' => $timeframe,
+                        'candle_timestamp' => Carbon::createFromTimestamp($candle['timestamp']),
+                    ],
+                    [
+                        'open' => $candle['open'],
+                        'high' => $candle['high'],
+                        'low' => $candle['low'],
+                        'close' => $candle['close'],
+                        'volume' => $candle['volume'] ?? 0,
+                    ]
+                );
+            }
+            
+            $this->logInfo('Cached candles', [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'count' => count($candles),
+            ]);
+            
+            // Clean old cache entries (older than 7 days)
+            $this->cleanOldCache($symbol, $timeframe);
+            
+        } catch (\Exception $e) {
+            $this->logError('Failed to cache candles: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Get cache TTL (time-to-live) in minutes based on timeframe
+     */
+    private function getCacheTTL(string $timeframe): int
+    {
+        return match($timeframe) {
+            '1m', '1' => 1,      // 1 minute for 1m candles
+            '5m', '5' => 5,      // 5 minutes for 5m candles
+            '15m', '15' => 15,   // 15 minutes for 15m candles
+            '30m', '30' => 30,   // 30 minutes for 30m candles
+            '1H', '60' => 60,    // 1 hour for hourly candles
+            '1D', 'D' => 1440,   // 24 hours for daily candles
+            '1W', 'W' => 10080,  // 7 days for weekly candles
+            '1M', 'M' => 43200,  // 30 days for monthly candles
+            default => 15
+        };
+    }
+    
+    /**
+     * Clean old cached candles (older than 7 days)
+     */
+    private function cleanOldCache(string $symbol, string $timeframe): void
+    {
+        try {
+            $cutoff = Carbon::now()->subDays(7);
+            
+            CandleCache::where('symbol', $symbol)
+                ->where('timeframe', $timeframe)
+                ->where('candle_timestamp', '<', $cutoff)
+                ->delete();
+                
+        } catch (\Exception $e) {
+            $this->logError('Failed to clean old cache: ' . $e->getMessage());
+        }
     }
 }
