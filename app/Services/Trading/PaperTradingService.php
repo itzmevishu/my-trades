@@ -530,8 +530,8 @@ class PaperTradingService extends BaseService
     private function isInTradingWindow(): bool
     {
         $now = now();
-        $startTime = Carbon::parse(setting('trading_start_time', '11:15:00'));
-        $endTime = Carbon::parse(setting('trading_end_time', '14:00:00'));
+        $startTime = Carbon::parse(setting('trading_start_time', '09:15:00'));
+        $endTime = Carbon::parse(setting('trading_end_time', '15:30:00'));
         
         return $now->between($startTime, $endTime);
     }

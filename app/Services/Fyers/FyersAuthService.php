@@ -5,6 +5,7 @@ namespace App\Services\Fyers;
 use App\Services\BaseService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use App\Models\Setting;
 
 /**
  * Fyers Authentication Service
@@ -60,8 +61,10 @@ class FyersAuthService extends BaseService
                 $accessToken = $data['access_token'] ?? null;
                 
                 if ($accessToken) {
-                    // Store token in cache (valid for 24 hours)
-                    Cache::put('fyers_access_token', $accessToken, now()->addHours(23));
+                    // Store token in settings (valid for 23 hours)
+                    Setting::setValue('fyers_access_token', $accessToken, 'string', 'Fyers API Access Token');
+                    Setting::setValue('fyers_token_expires_at', now()->addHours(23)->timestamp, 'integer', 'Token expiration timestamp');
+                    
                     $this->logInfo('Fyers authentication successful');
                     
                     return ['success' => true, 'token' => $accessToken];
@@ -78,19 +81,31 @@ class FyersAuthService extends BaseService
     }
     
     /**
-     * Get access token from cache
+     * Get access token from settings
      */
     public function getAccessToken(): ?string
     {
-        return Cache::get('fyers_access_token');
+        if (!$this->isTokenValid()) {
+            return null;
+        }
+        
+        return Setting::getValue('fyers_access_token');
     }
     
     /**
-     * Check if token is valid
+     * Check if token is valid (exists and not expired)
      */
     public function isTokenValid(): bool
     {
-        return Cache::has('fyers_access_token');
+        $token = Setting::getValue('fyers_access_token');
+        $expiresAt = Setting::getValue('fyers_token_expires_at');
+        
+        if (!$token || !$expiresAt) {
+            return false;
+        }
+        
+        // Check if token hasn't expired
+        return now()->timestamp < $expiresAt;
     }
     
     /**
@@ -98,7 +113,8 @@ class FyersAuthService extends BaseService
      */
     public function revokeToken(): bool
     {
-        Cache::forget('fyers_access_token');
+        Setting::setValue('fyers_access_token', '', 'string');
+        Setting::setValue('fyers_token_expires_at', 0, 'integer');
         Cache::forget('fyers_auth_state');
         $this->logInfo('Fyers token revoked');
         return true;
