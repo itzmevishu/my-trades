@@ -71,6 +71,14 @@ class FyersDataService extends BaseService
             // Fyers API requires Authorization header in format: {app_id}:{access_token}
             $appId = setting('fyers_client_id');
             
+            $this->logInfo('Fetching from Fyers API', [
+                'url' => "{$this->baseUrl}/history",
+                'symbol' => $this->convertSymbol($symbol),
+                'resolution' => $resolution,
+                'app_id' => $appId,
+                'has_token' => !empty($accessToken),
+            ]);
+            
             $response = Http::withHeaders([
                 'Authorization' => "{$appId}:{$accessToken}",
             ])->get("{$this->baseUrl}/history", [
@@ -95,7 +103,13 @@ class FyersDataService extends BaseService
                 }
             }
             
-            $this->logError('Fyers API error: ' . $response->body());
+            $this->logError('Fyers API error', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'url' => "{$this->baseUrl}/history",
+                'symbol' => $this->convertSymbol($symbol),
+                'resolution' => $resolution,
+            ]);
             $this->logInfo('Falling back to simulator');
             return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
             
