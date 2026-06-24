@@ -159,7 +159,7 @@
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-400">Trading Hours:</span>
-                        <span class="font-bold text-emerald-400">11:15 AM - 2:00 PM</span>
+                        <span class="font-bold text-emerald-400">{{ setting('trading_start_time') }} - {{ setting('trading_end_time') }}</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-400">Status:</span>
