@@ -17,7 +17,7 @@ use Carbon\Carbon;
  */
 class FyersDataService extends BaseService
 {
-    private string $baseUrl = 'https://api-t1.fyers.in/data';
+    private string $baseUrl = 'https://api.fyers.in/data-rest/v3';
     private FyersAuthService $authService;
     private RateLimiter $rateLimiter;
     
@@ -68,8 +68,11 @@ class FyersDataService extends BaseService
             $rangeTo = Carbon::now()->timestamp;
             $rangeFrom = Carbon::now()->subDays($this->calculateDays($timeframe, $limit))->timestamp;
             
+            // Fyers API requires Authorization header in format: {app_id}:{access_token}
+            $appId = setting('fyers_client_id');
+            
             $response = Http::withHeaders([
-                'Authorization' => "{$accessToken}",
+                'Authorization' => "{$appId}:{$accessToken}",
             ])->get("{$this->baseUrl}/history", [
                 'symbol' => $this->convertSymbol($symbol),
                 'resolution' => $resolution,
@@ -116,8 +119,10 @@ class FyersDataService extends BaseService
         try {
             $this->rateLimiter->waitForSlot();
             
+            $appId = setting('fyers_client_id');
+            
             $response = Http::withHeaders([
-                'Authorization' => "{$accessToken}",
+                'Authorization' => "{$appId}:{$accessToken}",
             ])->get("{$this->baseUrl}/quotes", [
                 'symbols' => 'NSE:NIFTYBANK-INDEX',
             ]);
@@ -154,8 +159,10 @@ class FyersDataService extends BaseService
         try {
             $this->rateLimiter->waitForSlot();
             
+            $appId = setting('fyers_client_id');
+            
             $response = Http::withHeaders([
-                'Authorization' => "{$accessToken}",
+                'Authorization' => "{$appId}:{$accessToken}",
             ])->get("{$this->baseUrl}/quotes", [
                 'symbols' => $symbol,
             ]);

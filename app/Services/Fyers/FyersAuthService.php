@@ -17,7 +17,7 @@ use App\Models\Setting;
  */
 class FyersAuthService extends BaseService
 {
-    private string $baseUrl = 'https://api-t1.fyers.in/api/v3';
+    private string $baseUrl = 'https://api.fyers.in/api/v3';
     
     /**
      * Generate auth URL for user to login
@@ -38,7 +38,7 @@ class FyersAuthService extends BaseService
             'scope' => 'openid profile orders',
         ]);
         
-        return "https://api-t1.fyers.in/api/v3/generate-authcode?{$params}";
+        return "https://api.fyers.in/api/v3/generate-authcode?{$params}";
     }
     
     /**
