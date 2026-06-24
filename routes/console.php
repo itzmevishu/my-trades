@@ -15,14 +15,14 @@ Artisan::command('inspire', function () {
 /**
  * Entry Signal Scanning
  * 
- * Runs every 15 minutes during trading hours (11:15 AM - 2:00 PM IST)
- * Scans for entry signals and executes trades if valid setup found.
+ * Runs every 15 minutes during trading hours (9:15 AM - 3:30 PM IST)
+ * Scans for entry signals when 15-minute candles complete.
  * 
- * Cron: Every 15 minutes, Mon-Fri, 11 AM-2 PM
+ * Cron: Every 15 minutes, Mon-Fri, 9:15 AM - 3:30 PM
  */
 Schedule::command('trading:scan')
     ->everyFifteenMinutes()
-    ->between('11:15', '14:00')
+    ->between('09:15', '15:30')
     ->weekdays()
     ->timezone('Asia/Kolkata')
     ->name('Entry Signal Scan')
