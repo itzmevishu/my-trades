@@ -234,14 +234,17 @@ class FyersDataService extends BaseService
      */
     private function calculateDays(string $timeframe, int $limit): int
     {
+        // Double the buffer to ensure we get enough historical data
+        $multiplier = 2;
+        
         return match($timeframe) {
-            '1m', '1' => ceil($limit / (60 * 6.5)),
-            '5m', '5' => ceil($limit / (12 * 6.5)),
-            '15m', '15' => ceil($limit / (4 * 6.5)),
-            '30m', '30' => ceil($limit / (2 * 6.5)),
-            '1H', '60' => ceil($limit / 6.5),
-            '1D', 'D' => $limit,
-            default => ceil($limit / (4 * 6.5))
+            '1m', '1' => ceil($limit / (60 * 6.5)) * $multiplier,
+            '5m', '5' => ceil($limit / (12 * 6.5)) * $multiplier,
+            '15m', '15' => ceil($limit / (4 * 6.5)) * $multiplier,
+            '30m', '30' => ceil($limit / (2 * 6.5)) * $multiplier,
+            '1H', '60' => ceil($limit / 6.5) * $multiplier,
+            '1D', 'D' => $limit * $multiplier,
+            default => ceil($limit / (4 * 6.5)) * $multiplier
         };
     }
     
