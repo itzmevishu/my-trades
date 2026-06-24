@@ -59,7 +59,7 @@ class FyersDataService extends BaseService
         
         try {
             // Wait for rate limiter
-            $this->rateLimiter->wait();
+            $this->rateLimiter->waitForSlot();
             
             // Convert timeframe to Fyers format
             $resolution = $this->convertTimeframe($timeframe);
@@ -114,7 +114,7 @@ class FyersDataService extends BaseService
         }
         
         try {
-            $this->rateLimiter->wait();
+            $this->rateLimiter->waitForSlot();
             
             $response = Http::withHeaders([
                 'Authorization' => "{$accessToken}",
@@ -152,7 +152,7 @@ class FyersDataService extends BaseService
         }
         
         try {
-            $this->rateLimiter->wait();
+            $this->rateLimiter->waitForSlot();
             
             $response = Http::withHeaders([
                 'Authorization' => "{$accessToken}",
