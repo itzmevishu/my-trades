@@ -64,7 +64,7 @@ class TradingScanCommand extends Command
                 $this->newLine();
                 $this->line('Possible reasons:');
                 $this->line('  • Already traded today (1 trade/day limit)');
-                $this->line('  • Outside trading window (11:15 AM - 2:00 PM)');
+                $this->line('  • Outside trading window (' . setting('trading_start_time') . ' - ' . setting('trading_end_time') . ')');
                 $this->line('  • Market holiday');
                 $this->line('  • No pattern detected');
                 $this->line('  • Insufficient EMA confluence');

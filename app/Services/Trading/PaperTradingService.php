@@ -25,7 +25,7 @@ use Carbon\Carbon;
  * 
  * Trading Rules:
  * - 1 trade per day maximum
- * - Entry window: 11:15 AM - 2:00 PM
+ * - Entry window: Configurable via settings (default: 9:15 AM - 3:30 PM)
  * - EOD exit: 3:15 PM sharp
  * - Only ATM options (nearest strike)
  * - 15-minute timeframe analysis
@@ -525,7 +525,7 @@ class PaperTradingService extends BaseService
     }
 
     /**
-     * Check if currently in trading window (11:15 AM - 2:00 PM)
+     * Check if currently in trading window (configurable via settings)
      */
     private function isInTradingWindow(): bool
     {
