@@ -17,7 +17,7 @@ use Carbon\Carbon;
  */
 class FyersDataService extends BaseService
 {
-    private string $baseUrl = 'https://api.fyers.in/data-rest/v3';
+    private string $baseUrl = 'https://api-t2.fyers.in/data-rest/v2';
     private FyersAuthService $authService;
     private RateLimiter $rateLimiter;
     
