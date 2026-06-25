@@ -39,3 +39,4 @@ class ListCandleCaches extends ListRecords
                 ->modalCancelActionLabel('Close'),
         ];
     }
+}
