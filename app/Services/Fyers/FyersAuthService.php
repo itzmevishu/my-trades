@@ -50,11 +50,19 @@ class FyersAuthService extends BaseService
         $secretKey = setting('fyers_secret_key');
         
         try {
-            $response = Http::post("{$this->baseUrl}/validate-authcode", [
-                'grant_type' => 'authorization_code',
-                'appIdHash' => hash('sha256', $clientId . ':' . $secretKey),
-                'code' => $authCode,
-            ]);
+            // Generate appIdHash: SHA256 hash of clientId:secretKey
+            $appIdHash = hash('sha256', $clientId . ':' . $secretKey);
+            
+            // Fyers v3 requires JSON body with specific format
+            $response = Http::acceptJson()
+                ->contentType('application/json')
+                ->post("{$this->baseUrl}/validate-authcode", [
+                    'grant_type' => 'authorization_code',
+                    'appIdHash' => $appIdHash,
+                    'code' => $authCode,
+                ]);
+            
+            $this->logInfo('Fyers token exchange response: ' . $response->status() . ' - ' . $response->body());
             
             if ($response->successful()) {
                 $data = $response->json();
@@ -71,8 +79,8 @@ class FyersAuthService extends BaseService
                 }
             }
             
-            $this->logError('Fyers auth failed: ' . $response->body());
-            return ['success' => false, 'error' => 'Authentication failed'];
+            $this->logError('Fyers auth failed: ' . $response->status() . ' - ' . $response->body());
+            return ['success' => false, 'error' => 'Authentication failed: ' . $response->body()];
             
         } catch (\Exception $e) {
             $this->logError('Fyers auth exception: ' . $e->getMessage());
