@@ -135,12 +135,49 @@ class PaperTradingService extends BaseService
         $emas = $this->emaCalculator->calculateMultipleEMAs($candles);
         $currentPrice = $candles[count($candles) - 1]['close'];
         
-        // Check EMA confluence
-        $confluenceCount = $this->emaCalculator->countEMAConfluence($currentPrice, $emas);
+        // Smart 20 EMA check (matches your trading understanding)
+        $ema20 = $emas['ema_20'];
+        $distanceFrom20EMA = abs($currentPrice - $ema20) / $ema20 * 100; // Percentage distance
         
-        if ($confluenceCount < 1) {
-            $this->logInfo('Insufficient EMA confluence', [
-                'confluence_count' => $confluenceCount
+        // Check if price is in valid position relative to 20 EMA
+        $emaValid = false;
+        $rejectionReason = '';
+        
+        if ($patternResult['direction'] === 'bullish') {
+            // Bullish pattern: Price should be above or near 20 EMA (pullback to support)
+            // Allow price to be 0-3% above 20 EMA
+            if ($currentPrice >= $ema20 * 0.97 && $currentPrice <= $ema20 * 1.03) {
+                $emaValid = true;
+            } else if ($currentPrice < $ema20 * 0.97) {
+                $rejectionReason = "Bullish pattern but price too far below 20 EMA ({$distanceFrom20EMA}% below)";
+            } else {
+                $rejectionReason = "Bullish pattern but price too far above 20 EMA ({$distanceFrom20EMA}% above) - entry too late";
+            }
+        } else if ($patternResult['direction'] === 'bearish') {
+            // Bearish pattern: Price should be below or near 20 EMA (rally to resistance)
+            // Allow price to be 0-3% below 20 EMA
+            if ($currentPrice <= $ema20 * 1.03 && $currentPrice >= $ema20 * 0.97) {
+                $emaValid = true;
+            } else if ($currentPrice > $ema20 * 1.03) {
+                $rejectionReason = "Bearish pattern but price too far above 20 EMA ({$distanceFrom20EMA}% above)";
+            } else {
+                $rejectionReason = "Bearish pattern but price too far below 20 EMA ({$distanceFrom20EMA}% below) - entry too late";
+            }
+        } else {
+            // Neutral/continuation patterns - just check proximity to 20 EMA
+            if ($distanceFrom20EMA <= 3.0) {
+                $emaValid = true;
+            } else {
+                $rejectionReason = "Price too far from 20 EMA ({$distanceFrom20EMA}%)";
+            }
+        }
+        
+        if (!$emaValid) {
+            $this->logInfo('20 EMA check failed', [
+                'pattern_direction' => $patternResult['direction'],
+                'current_price' => $currentPrice,
+                'ema_20' => $ema20,
+                'distance_pct' => round($distanceFrom20EMA, 2)
             ]);
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
@@ -152,15 +189,16 @@ class PaperTradingService extends BaseService
                 'ema_20' => $emas['ema_20'],
                 'ema_100' => $emas['ema_100'],
                 'ema_200' => $emas['ema_200'],
-                'ema_confluence_count' => $confluenceCount,
-                'rejection_reason' => "Pattern found but price not near EMAs (confluence: {$confluenceCount})",
+                'ema_confluence_count' => 0,
+                'rejection_reason' => $rejectionReason,
             ]);
             return null;
         }
 
-        $this->logInfo('EMA confluence detected', [
-            'count' => $confluenceCount,
-            'emas' => $emas
+        $this->logInfo('20 EMA check passed', [
+            'pattern_direction' => $patternResult['direction'],
+            'price_vs_ema' => $currentPrice > $ema20 ? 'above' : 'below',
+            'distance_pct' => round($distanceFrom20EMA, 2)
         ]);
 
         // Get HTF bias (simulate - in production would analyze daily/weekly)
@@ -169,7 +207,8 @@ class PaperTradingService extends BaseService
         // Prepare setup data for Claude scoring
         $setupData = [
             'candle_pattern' => $patternResult['pattern'],
-            'ema_confluence' => $confluenceCount,
+            'ema_20_distance' => round($distanceFrom20EMA, 2),
+            'price_vs_ema' => $currentPrice > $ema20 ? 'above' : 'below',
             'htf_bias' => $htfBias,
             'session_slot' => $this->getCurrentSessionSlot(),
             'market_condition' => $this->determineMarketCondition($candles),
@@ -297,7 +336,8 @@ class PaperTradingService extends BaseService
                 'ema_20' => $emas['ema_20'],
                 'ema_100' => $emas['ema_100'],
                 'ema_200' => $emas['ema_200'],
-                'confluence_count' => $confluenceCount
+                'distance_from_20ema_pct' => round($distanceFrom20EMA, 2),
+                'price_vs_20ema' => $currentPrice > $ema20 ? 'above' : 'below'
             ]),
             'htf_bias' => $htfBias,
             'claude_score' => $claudeScore['score'],
@@ -318,7 +358,10 @@ class PaperTradingService extends BaseService
             'ema_20' => $emas['ema_20'],
             'ema_100' => $emas['ema_100'],
             'ema_200' => $emas['ema_200'],
-            'ema_confluence_count' => $confluenceCount,
+            'ema_confluence_count' => 1, // Smart 20 EMA check passed
+            'claude_score' => $claudeScore['score'],
+            'trade_id' => $trade->id,
+        ]);
             'claude_score' => $claudeScore['score'],
             'trade_id' => $trade->id,
         ]);
