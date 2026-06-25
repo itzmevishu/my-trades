@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚀 Vishal Trades - AI Trading Terminal</title>
+    <title>🚀 {{ config('app.name') }} - AI Trading Terminal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @keyframes matrix {
@@ -60,7 +60,7 @@
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h1 class="text-6xl font-bold mb-2 text-green-400">
-                        🚀 VISHAL <span class="text-emerald-500">TRADES</span>
+                        🚀 {{ config('app.name') }}
                     </h1>
                     <p class="text-xl text-green-300">
                         AI-Powered Bank Nifty Options Trading Terminal
