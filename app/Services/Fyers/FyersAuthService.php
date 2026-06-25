@@ -17,7 +17,10 @@ use App\Models\Setting;
  */
 class FyersAuthService extends BaseService
 {
-    private string $baseUrl = 'https://api.fyers.in/api/v3';
+    // Fyers v3 API base URLs
+    // api-t1.fyers.in = Production (live trading)
+    // api-t2.fyers.in = Paper trading
+    private string $baseUrl = 'https://api-t1.fyers.in/api/v3';
     
     /**
      * Generate auth URL for user to login
@@ -38,7 +41,8 @@ class FyersAuthService extends BaseService
             'scope' => 'openid profile orders',
         ]);
         
-        return "https://api.fyers.in/api/v3/generate-authcode?{$params}";
+        // Use api-t1 for production auth
+        return "https://api-t1.fyers.in/api/v3/generate-authcode?{$params}";
     }
     
     /**
