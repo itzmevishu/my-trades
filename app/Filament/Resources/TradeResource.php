@@ -38,9 +38,10 @@ class TradeResource extends Resource
                             ])
                             ->required(),
                         Forms\Components\TextInput::make('strike')
+                            ->label('Strike (Index Level)')
                             ->required()
                             ->numeric()
-                            ->suffix('₹'),
+                            ->helperText('BankNifty strike (e.g., 58200, 58300)'),
                         Forms\Components\TextInput::make('lots')
                             ->required()
                             ->numeric()
@@ -136,7 +137,8 @@ class TradeResource extends Resource
                     ->sortable(),
                     
                 Tables\Columns\TextColumn::make('strike')
-                    ->money('INR', divideBy: 1)
+                    ->label('Strike')
+                    ->formatStateUsing(fn ($state) => number_format($state, 0))
                     ->sortable(),
                     
                 Tables\Columns\TextColumn::make('lots')
