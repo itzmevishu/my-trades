@@ -362,9 +362,6 @@ class PaperTradingService extends BaseService
             'claude_score' => $claudeScore['score'],
             'trade_id' => $trade->id,
         ]);
-            'claude_score' => $claudeScore['score'],
-            'trade_id' => $trade->id,
-        ]);
 
         return $trade->toArray();
     }
