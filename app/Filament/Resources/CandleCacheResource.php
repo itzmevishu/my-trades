@@ -30,7 +30,7 @@ class CandleCacheResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Candle Data')
-                    ->description('Historical OHLC price data from Fyers API')
+                    ->description('BankNifty Index price history (not option premiums)')
                     ->schema([
                         Forms\Components\Grid::make(3)
                             ->schema([
@@ -46,22 +46,31 @@ class CandleCacheResource extends Resource
                         Forms\Components\Grid::make(4)
                             ->schema([
                                 Forms\Components\TextInput::make('open')
-                                    ->label('Open ₹')
+                                    ->label('Open')
                                     ->disabled(),
                                 Forms\Components\TextInput::make('high')
-                                    ->label('High ₹')
+                                    ->label('High')
                                     ->disabled(),
                                 Forms\Components\TextInput::make('low')
-                                    ->label('Low ₹')
+                                    ->label('Low')
                                     ->disabled(),
                                 Forms\Components\TextInput::make('close')
-                                    ->label('Close ₹')
+                                    ->label('Close')
                                     ->disabled(),
                             ]),
                         
-                        Forms\Components\TextInput::make('volume')
-                            ->label('Volume')
-                            ->disabled(),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('volume')
+                                    ->label('Volume')
+                                    ->disabled(),
+                                
+                                Forms\Components\TextInput::make('atm_strike')
+                                    ->label('ATM Strike (Nearest 100)')
+                                    ->formatStateUsing(fn ($record) => $record ? number_format(round($record->close / 100) * 100, 0) : '-')
+                                    ->disabled()
+                                    ->helperText('Calculated: Round(Close / 100) × 100'),
+                            ]),
                     ]),
             ]);
     }
@@ -90,26 +99,37 @@ class CandleCacheResource extends Resource
                 
                 Tables\Columns\TextColumn::make('open')
                     ->label('Open')
-                    ->money('INR')
+                    ->formatStateUsing(fn ($state) => number_format($state, 2))
                     ->sortable(),
                 
                 Tables\Columns\TextColumn::make('high')
                     ->label('High')
-                    ->money('INR')
+                    ->formatStateUsing(fn ($state) => number_format($state, 2))
                     ->color('success')
                     ->sortable(),
                 
                 Tables\Columns\TextColumn::make('low')
                     ->label('Low')
-                    ->money('INR')
+                    ->formatStateUsing(fn ($state) => number_format($state, 2))
                     ->color('danger')
                     ->sortable(),
                 
                 Tables\Columns\TextColumn::make('close')
                     ->label('Close')
-                    ->money('INR')
+                    ->formatStateUsing(fn ($state) => number_format($state, 2))
                     ->weight('bold')
                     ->sortable(),
+                
+                Tables\Columns\TextColumn::make('atm_strike')
+                    ->label('ATM Strike')
+                    ->formatStateUsing(function ($record) {
+                        // BankNifty strike interval is 100 points
+                        $strike = round($record->close / 100) * 100;
+                        return number_format($strike, 0);
+                    })
+                    ->badge()
+                    ->color('info')
+                    ->sortable(false),
                 
                 Tables\Columns\TextColumn::make('volume')
                     ->label('Volume')
