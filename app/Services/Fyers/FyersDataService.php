@@ -418,12 +418,23 @@ class FyersDataService extends BaseService
     private function cleanOldCache(string $symbol, string $timeframe): void
     {
         try {
-            $cutoff = Carbon::now()->subDays(7);
+            // Keep candles for 1 month (configurable via settings)
+            $retentionDays = setting('candle_cache_retention_days', 30);
+            $cutoff = Carbon::now()->subDays($retentionDays);
             
-            CandleCache::where('symbol', $symbol)
+            $deleted = CandleCache::where('symbol', $symbol)
                 ->where('timeframe', $timeframe)
                 ->where('candle_timestamp', '<', $cutoff)
                 ->delete();
+            
+            if ($deleted > 0) {
+                $this->logInfo('Cleaned old cache', [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                    'deleted_count' => $deleted,
+                    'older_than_days' => $retentionDays,
+                ]);
+            }
                 
         } catch (\Exception $e) {
             $this->logError('Failed to clean old cache: ' . $e->getMessage());

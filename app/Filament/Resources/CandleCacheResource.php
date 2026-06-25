@@ -30,7 +30,7 @@ class CandleCacheResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Candle Data')
-                    ->description('BankNifty Index price history (not option premiums)')
+                    ->description('BankNifty Index price history (not option premiums). Data retained for 30 days by default.')
                     ->schema([
                         Forms\Components\Grid::make(3)
                             ->schema([
@@ -59,18 +59,9 @@ class CandleCacheResource extends Resource
                                     ->disabled(),
                             ]),
                         
-                        Forms\Components\Grid::make(2)
-                            ->schema([
-                                Forms\Components\TextInput::make('volume')
-                                    ->label('Volume')
-                                    ->disabled(),
-                                
-                                Forms\Components\TextInput::make('atm_strike')
-                                    ->label('ATM Strike (Nearest 100)')
-                                    ->formatStateUsing(fn ($record) => $record ? number_format(round($record->close / 100) * 100, 0) : '-')
-                                    ->disabled()
-                                    ->helperText('Calculated: Round(Close / 100) × 100'),
-                            ]),
+                        Forms\Components\TextInput::make('volume')
+                            ->label('Volume')
+                            ->disabled(),
                     ]),
             ]);
     }
@@ -119,17 +110,6 @@ class CandleCacheResource extends Resource
                     ->formatStateUsing(fn ($state) => number_format($state, 2))
                     ->weight('bold')
                     ->sortable(),
-                
-                Tables\Columns\TextColumn::make('atm_strike')
-                    ->label('ATM Strike')
-                    ->formatStateUsing(function ($record) {
-                        // BankNifty strike interval is 100 points
-                        $strike = round($record->close / 100) * 100;
-                        return number_format($strike, 0);
-                    })
-                    ->badge()
-                    ->color('info')
-                    ->sortable(false),
                 
                 Tables\Columns\TextColumn::make('volume')
                     ->label('Volume')
