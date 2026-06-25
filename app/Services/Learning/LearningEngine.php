@@ -7,6 +7,7 @@ use App\Services\Claude\ClaudeAPIService;
 use App\Models\Trade;
 use App\Models\StrategyConfig;
 use App\Models\LearningLog;
+use App\Models\ManualFeedback;
 
 /**
  * LearningEngine - Self-learning system for strategy optimization
@@ -198,7 +199,7 @@ class LearningEngine extends BaseService
     }
 
     /**
-     * Get Claude's analysis of trade batch
+     * Get Claude's analysis of trade batch + manual feedback
      */
     private function getClaudeAnalysis($trades): string
     {
@@ -215,7 +216,35 @@ class LearningEngine extends BaseService
                 ];
             })->toArray();
 
-            $analysis = $this->claudeService->generateReport($tradesSummary, 'learning');
+            // Fetch manual feedback that hasn't been incorporated yet
+            $manualNotes = ManualFeedback::notIncorporated()
+                ->orderBy('importance', 'desc')
+                ->orderBy('feedback_date', 'desc')
+                ->get();
+
+            // Prepare manual feedback for Claude
+            $userInsights = [];
+            if ($manualNotes->isNotEmpty()) {
+                $userInsights = $manualNotes->map(function($note) {
+                    return [
+                        'date' => $note->feedback_date->format('Y-m-d'),
+                        'category' => $note->category,
+                        'importance' => $note->importance,
+                        'observation' => $note->note,
+                        'related_trade' => $note->trade_id ? "#" . $note->trade_id : null,
+                    ];
+                })->toArray();
+            }
+
+            // Enhanced prompt with manual feedback
+            $prompt = $this->buildLearningPrompt($tradesSummary, $userInsights);
+            
+            $analysis = $this->claudeService->generateCustomAnalysis($prompt);
+
+            // Mark manual feedback as incorporated
+            if ($manualNotes->isNotEmpty()) {
+                $this->markFeedbackAsIncorporated($manualNotes);
+            }
 
             return $analysis;
 
@@ -223,6 +252,62 @@ class LearningEngine extends BaseService
             $this->logError('Claude analysis failed', ['error' => $e->getMessage()]);
             return 'Analysis unavailable due to API error.';
         }
+    }
+
+    /**
+     * Build enhanced learning prompt with manual feedback
+     */
+    private function buildLearningPrompt(array $trades, array $userInsights): string
+    {
+        $prompt = "Analyze this trading performance batch:\n\n";
+        
+        $prompt .= "TRADE RESULTS:\n";
+        foreach ($trades as $trade) {
+            $prompt .= "- {$trade['date']}: {$trade['pattern']} → {$trade['outcome']} (₹{$trade['pnl']}, R:R {$trade['rr']})\n";
+        }
+        
+        if (!empty($userInsights)) {
+            $prompt .= "\n\nTRADER'S OBSERVATIONS (User Insights):\n";
+            foreach ($userInsights as $insight) {
+                $importance = strtoupper($insight['importance']);
+                $prompt .= "- [{$importance}] [{$insight['category']}] {$insight['observation']}";
+                if ($insight['related_trade']) {
+                    $prompt .= " (Trade {$insight['related_trade']})";
+                }
+                $prompt .= "\n";
+            }
+            $prompt .= "\nIMPORTANT: Pay special attention to the trader's observations above. These are real-world insights that complement the statistical analysis.\n";
+        }
+        
+        $prompt .= "\n\nPROVIDE:\n";
+        $prompt .= "1. Pattern Performance Summary\n";
+        $prompt .= "2. What worked well\n";
+        $prompt .= "3. What didn't work\n";
+        $prompt .= "4. Key lessons learned (incorporate trader's observations)\n";
+        $prompt .= "5. Specific recommendations for next trades\n";
+        
+        if (!empty($userInsights)) {
+            $prompt .= "6. How to apply the trader's insights to improve strategy\n";
+        }
+        
+        return $prompt;
+    }
+
+    /**
+     * Mark manual feedback as incorporated into learning
+     */
+    private function markFeedbackAsIncorporated($feedbackRecords): void
+    {
+        foreach ($feedbackRecords as $feedback) {
+            $feedback->update([
+                'incorporated_in_learning' => true,
+                'learning_log_id' => null, // Will be set when learning log is saved
+            ]);
+        }
+        
+        $this->logInfo('Marked manual feedback as incorporated', [
+            'count' => $feedbackRecords->count()
+        ]);
     }
 
     /**

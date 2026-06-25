@@ -192,6 +192,31 @@ class ClaudeAPIService extends BaseService
     }
 
     /**
+     * Generate custom analysis with provided prompt
+     * 
+     * Used for learning cycle with manual feedback integration
+     * 
+     * @param string $customPrompt Pre-built prompt
+     * @return string Claude's analysis
+     */
+    public function generateCustomAnalysis(string $customPrompt): string
+    {
+        $this->logInfo('Generating custom analysis');
+
+        try {
+            $response = $this->callClaudeAPI($customPrompt, 'custom_analysis');
+            return $response;
+
+        } catch (\Exception $e) {
+            $this->logError('Failed to generate custom analysis', [
+                'error' => $e->getMessage()
+            ]);
+
+            return "Analysis generation failed: " . $e->getMessage();
+        }
+    }
+
+    /**
      * Call Claude API
      * 
      * @param string $prompt User prompt
