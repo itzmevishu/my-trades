@@ -100,7 +100,9 @@ class PaperTradingService extends BaseService
         
         if ($useRealData) {
             $this->logInfo('Fetching REAL market data from Fyers API');
-            $candles = $this->fyersData->fetchCandles('NSE:NIFTYBANK-INDEX', '15m', 250);
+            $timeframe = setting('trading_timeframe', '15m');
+            $lookback = setting('candle_lookback', 250);
+            $candles = $this->fyersData->fetchCandles('NSE:NIFTYBANK-INDEX', $timeframe, $lookback);
         } else {
             $this->logInfo('Using SIMULATED market data');
             $candles = FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '15', 250);
@@ -547,7 +549,7 @@ class PaperTradingService extends BaseService
     private function calculatePnL(Trade $trade, float $exitPremium): float
     {
         $remainingLots = $trade->remaining_lots ?? $trade->lots;
-        $lotSize = 15; // Bank Nifty lot size
+        $lotSize = setting('banknifty_lot_size', 15); // Bank Nifty lot size
         
         $entryValue = $trade->entry_premium * $remainingLots * $lotSize;
         $exitValue = $exitPremium * $remainingLots * $lotSize;
@@ -567,7 +569,7 @@ class PaperTradingService extends BaseService
      */
     private function calculatePartialPnL(Trade $trade, float $exitPremium, int $lotsExited): float
     {
-        $lotSize = 15;
+        $lotSize = setting('banknifty_lot_size', 15);
         $entryValue = $trade->entry_premium * $lotsExited * $lotSize;
         $exitValue = $exitPremium * $lotsExited * $lotSize;
         

@@ -13,6 +13,21 @@ Artisan::command('inspire', function () {
 // ============================================================================
 
 /**
+ * ⚠️ NOTE: Schedule times are hardcoded here due to Laravel limitations.
+ * 
+ * Trading hours ARE configurable in database (Settings):
+ * - market_start_time, market_end_time
+ * - entry_window_start, entry_window_end
+ * 
+ * However, Laravel's Schedule facade doesn't support dynamic ->between() times.
+ * 
+ * To change schedule times:
+ * 1. Update these between() calls below
+ * 2. OR run commands manually: php artisan trading:scan
+ * 3. See: CONFIGURABLE_PARAMETERS.md
+ */
+
+/**
  * Entry Signal Scanning
  * 
  * Runs every 15 minutes during trading hours (9:15 AM - 3:30 PM IST)

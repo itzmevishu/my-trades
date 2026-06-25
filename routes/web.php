@@ -19,8 +19,10 @@ Route::get('/', function () {
     $strategyVersion = $currentStrategy ? $currentStrategy->version : 1;
     
     $now = now('Asia/Kolkata');
-    $tradingStart = $now->copy()->setTime(11, 15);
-    $tradingEnd = $now->copy()->setTime(14, 0);
+    
+    // Get trading hours from settings (existing: trading_start_time, trading_end_time)
+    $tradingStart = now('Asia/Kolkata')->setTimeFromTimeString(setting('trading_start_time', '11:15:00'));
+    $tradingEnd = now('Asia/Kolkata')->setTimeFromTimeString(setting('trading_end_time', '14:00:00'));
     $inTradingWindow = $now->between($tradingStart, $tradingEnd) && $now->isWeekday();
     $todayTrades = Trade::whereDate('entry_time', $now->toDateString())->count();
     

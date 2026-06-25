@@ -232,7 +232,7 @@ class FyersSimulator
             'symbol' => "NSE:BANKNIFTY26JUN{$strikePrice}{$direction}",
             'strike_price' => $strikePrice,
             'direction' => $direction,
-            'quantity' => $lots * 15,
+            'quantity' => $lots * setting('banknifty_lot_size', 15),
             'order_type' => 'MARKET',
             'requested_premium' => $premium,
             'filled_premium' => $filledPremium,

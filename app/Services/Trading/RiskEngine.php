@@ -57,8 +57,8 @@ class RiskEngine extends BaseService
             throw new \Exception('Invalid SL distance: cannot be zero');
         }
 
-        // Risk per lot = SL distance × lot size (15 for Bank Nifty)
-        $lotSize = 15; // Bank Nifty lot size
+        // Risk per lot = SL distance × lot size
+        $lotSize = setting('banknifty_lot_size', 15); // Bank Nifty lot size from settings
         $riskPerLot = $slDistance * $lotSize;
 
         // Calculate number of lots (rounded down)
@@ -74,10 +74,11 @@ class RiskEngine extends BaseService
         // Total risk with calculated lots
         $totalRisk = $lots * $riskPerLot;
 
-        // Calculate target premium (2:1 RR)
+        // Calculate target premium based on configured R:R
         $targetRR = setting('target_rr', 2.0);
         $targetPremium = $entryPremium - ($slDistance * $targetRR);
-        $targetPremium = max(5, $targetPremium); // Minimum 5 points
+        $minTarget = setting('minimum_target_premium', 5);
+        $targetPremium = max($minTarget, $targetPremium); // Enforce minimum target
 
         // Potential profit
         $potentialProfit = $lots * $lotSize * ($entryPremium - $targetPremium);
