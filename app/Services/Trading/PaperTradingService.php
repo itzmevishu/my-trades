@@ -117,13 +117,19 @@ class PaperTradingService extends BaseService
         $patternResult = $this->patternDetector->detectPatternWithDetails($candles);
         
         if (!$patternResult) {
-            $this->logInfo('No valid pattern detected');
+            // Get detailed rejection reasons
+            $rejectionSummary = $this->patternDetector->getRejectionSummary();
+            
+            $this->logInfo('No valid pattern detected', [
+                'rejection_details' => $this->patternDetector->getRejectionReasons()
+            ]);
+            
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
                 'scan_time' => now()->toTimeString(),
                 'result' => 'no_pattern',
                 'current_price' => $candles[count($candles) - 1]['close'],
-                'rejection_reason' => 'No valid candlestick pattern found',
+                'rejection_reason' => $rejectionSummary,
             ]);
             return null;
         }

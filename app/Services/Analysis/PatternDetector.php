@@ -19,6 +19,11 @@ use App\Services\BaseService;
 class PatternDetector extends BaseService
 {
     /**
+     * Store rejection reasons for debugging
+     */
+    protected array $rejectionReasons = [];
+
+    /**
      * Detect pattern from recent candles
      * 
      * @param array $candles Array of at least 2-3 candles (most recent last)
@@ -26,10 +31,14 @@ class PatternDetector extends BaseService
      */
     public function detectPattern(array $candles): ?string
     {
+        // Reset rejection reasons
+        $this->rejectionReasons = [];
+
         if (count($candles) < 2) {
             $this->logWarning('Need at least 2 candles for pattern detection', [
                 'provided' => count($candles)
             ]);
+            $this->rejectionReasons[] = "Insufficient candles: " . count($candles) . " (need 2+)";
             return null;
         }
 
@@ -62,6 +71,26 @@ class PatternDetector extends BaseService
     }
 
     /**
+     * Get rejection reasons from last detection attempt
+     */
+    public function getRejectionReasons(): array
+    {
+        return $this->rejectionReasons;
+    }
+
+    /**
+     * Get formatted rejection summary
+     */
+    public function getRejectionSummary(): string
+    {
+        if (empty($this->rejectionReasons)) {
+            return "No patterns detected (all criteria checks failed)";
+        }
+        
+        return "Pattern checks failed:\n" . implode("\n", $this->rejectionReasons);
+    }
+
+    /**
      * Check for bullish engulfing pattern
      * 
      * Criteria:
@@ -77,13 +106,19 @@ class PatternDetector extends BaseService
         $current = end($candles);
         $previous = $candles[count($candles) - 2];
 
+        $reasons = [];
+
         // Previous must be bearish
         if ($previous['close'] >= $previous['open']) {
+            $reasons[] = "Bullish Engulfing: Previous candle not bearish (C:" . round($previous['close'], 2) . " >= O:" . round($previous['open'], 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Current must be bullish
         if ($current['close'] <= $current['open']) {
+            $reasons[] = "Bullish Engulfing: Current candle not bullish (C:" . round($current['close'], 2) . " <= O:" . round($current['open'], 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
@@ -95,6 +130,12 @@ class PatternDetector extends BaseService
 
         $engulfs = $currentBodyTop > $previousBodyTop && 
                    $currentBodyBottom < $previousBodyBottom;
+
+        if (!$engulfs) {
+            $reasons[] = "Bullish Engulfing: Current body doesn't engulf previous (Cur:" . round($currentBodyBottom, 2) . "-" . round($currentBodyTop, 2) . " vs Prev:" . round($previousBodyBottom, 2) . "-" . round($previousBodyTop, 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
+            return false;
+        }
 
         if ($engulfs) {
             $this->logInfo('Bullish engulfing detected', [
@@ -122,13 +163,19 @@ class PatternDetector extends BaseService
         $current = end($candles);
         $previous = $candles[count($candles) - 2];
 
+        $reasons = [];
+
         // Previous must be bullish
         if ($previous['close'] <= $previous['open']) {
+            $reasons[] = "Bearish Engulfing: Previous candle not bullish (C:" . round($previous['close'], 2) . " <= O:" . round($previous['open'], 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Current must be bearish
         if ($current['close'] >= $current['open']) {
+            $reasons[] = "Bearish Engulfing: Current candle not bearish (C:" . round($current['close'], 2) . " >= O:" . round($current['open'], 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
@@ -140,6 +187,12 @@ class PatternDetector extends BaseService
 
         $engulfs = $currentBodyTop > $previousBodyTop && 
                    $currentBodyBottom < $previousBodyBottom;
+
+        if (!$engulfs) {
+            $reasons[] = "Bearish Engulfing: Current body doesn't engulf previous (Cur:" . round($currentBodyBottom, 2) . "-" . round($currentBodyTop, 2) . " vs Prev:" . round($previousBodyBottom, 2) . "-" . round($previousBodyTop, 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
+            return false;
+        }
 
         if ($engulfs) {
             $this->logInfo('Bearish engulfing detected', [
@@ -172,29 +225,44 @@ class PatternDetector extends BaseService
         $lowerWick = min($current['open'], $current['close']) - $current['low'];
         $totalRange = $current['high'] - $current['low'];
 
+        $reasons = [];
+
         // Must be bullish
         if ($current['close'] <= $current['open']) {
+            $reasons[] = "Bullish Pinbar: Not bullish candle (C:" . round($current['close'], 2) . " <= O:" . round($current['open'], 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Body must not be too small
+        $bodyPct = ($body / $totalRange) * 100;
         if ($body < $totalRange * 0.1) {
+            $reasons[] = "Bullish Pinbar: Body too small (" . round($bodyPct, 1) . "% of range, need >10%)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Long lower wick (at least 2x body)
+        $lowerWickRatio = $body > 0 ? $lowerWick / $body : 0;
         if ($lowerWick < $body * 2) {
+            $reasons[] = "Bullish Pinbar: Lower wick too short (" . round($lowerWickRatio, 2) . "x body, need 2x)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Small upper wick
+        $upperWickRatio = $body > 0 ? $upperWick / $body : 0;
         if ($upperWick > $body * 0.5) {
+            $reasons[] = "Bullish Pinbar: Upper wick too long (" . round($upperWickRatio, 2) . "x body, need <0.5x)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Body should be in upper portion
         $bodyPosition = (max($current['open'], $current['close']) - $current['low']) / $totalRange;
         if ($bodyPosition < 0.66) {
+            $reasons[] = "Bullish Pinbar: Body not in upper range (" . round($bodyPosition * 100, 1) . "%, need >66%)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
@@ -229,29 +297,44 @@ class PatternDetector extends BaseService
         $lowerWick = min($current['open'], $current['close']) - $current['low'];
         $totalRange = $current['high'] - $current['low'];
 
+        $reasons = [];
+
         // Must be bearish
         if ($current['close'] >= $current['open']) {
+            $reasons[] = "Bearish Pinbar: Not bearish candle (C:" . round($current['close'], 2) . " >= O:" . round($current['open'], 2) . ")";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Body must not be too small
+        $bodyPct = ($body / $totalRange) * 100;
         if ($body < $totalRange * 0.1) {
+            $reasons[] = "Bearish Pinbar: Body too small (" . round($bodyPct, 1) . "% of range, need >10%)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Long upper wick (at least 2x body)
+        $upperWickRatio = $body > 0 ? $upperWick / $body : 0;
         if ($upperWick < $body * 2) {
+            $reasons[] = "Bearish Pinbar: Upper wick too short (" . round($upperWickRatio, 2) . "x body, need 2x)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Small lower wick
+        $lowerWickRatio = $body > 0 ? $lowerWick / $body : 0;
         if ($lowerWick > $body * 0.5) {
+            $reasons[] = "Bearish Pinbar: Lower wick too long (" . round($lowerWickRatio, 2) . "x body, need <0.5x)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
         // Body should be in lower portion
         $bodyPosition = (max($current['open'], $current['close']) - $current['low']) / $totalRange;
         if ($bodyPosition > 0.33) {
+            $reasons[] = "Bearish Pinbar: Body not in lower range (" . round($bodyPosition * 100, 1) . "%, need <33%)";
+            $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
             return false;
         }
 
@@ -287,6 +370,8 @@ class PatternDetector extends BaseService
 
         $breakoutThreshold = 20; // Minimum 20 points for significant breakout
 
+        $reasons = [];
+
         // Bullish breakout (close above mother bar high)
         if ($currentClose > $motherHigh && ($currentClose - $motherHigh) >= $breakoutThreshold) {
             $this->logInfo('Inside bar breakout (bullish)', [
@@ -307,6 +392,19 @@ class PatternDetector extends BaseService
             return true;
         }
 
+        // Check if it's close but didn't meet threshold
+        $bullishBreakoutPoints = $currentClose > $motherHigh ? $currentClose - $motherHigh : 0;
+        $bearishBreakoutPoints = $currentClose < $motherLow ? $motherLow - $currentClose : 0;
+
+        if ($bullishBreakoutPoints > 0 && $bullishBreakoutPoints < $breakoutThreshold) {
+            $reasons[] = "Inside Bar Breakout: Bullish breakout too small (" . round($bullishBreakoutPoints, 2) . " pts, need " . $breakoutThreshold . "+)";
+        } elseif ($bearishBreakoutPoints > 0 && $bearishBreakoutPoints < $breakoutThreshold) {
+            $reasons[] = "Inside Bar Breakout: Bearish breakout too small (" . round($bearishBreakoutPoints, 2) . " pts, need " . $breakoutThreshold . "+)";
+        } else {
+            $reasons[] = "Inside Bar Breakout: No breakout (Close:" . round($currentClose, 2) . " within Mother:" . round($motherLow, 2) . "-" . round($motherHigh, 2) . ")";
+        }
+
+        $this->rejectionReasons = array_merge($this->rejectionReasons, $reasons);
         return false;
     }
 
