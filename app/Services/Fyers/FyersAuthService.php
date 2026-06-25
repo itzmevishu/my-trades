@@ -53,19 +53,26 @@ class FyersAuthService extends BaseService
             // Generate appIdHash: SHA256 hash of clientId:secretKey
             $appIdHash = hash('sha256', $clientId . ':' . $secretKey);
             
-            // Fyers v3 requires JSON body with specific format
-            $response = Http::acceptJson()
-                ->contentType('application/json')
-                ->post("{$this->baseUrl}/validate-authcode", [
-                    'grant_type' => 'authorization_code',
-                    'appIdHash' => $appIdHash,
-                    'code' => $authCode,
-                ]);
+            // Fyers v3 API expects form-urlencoded data, not JSON
+            // Use asForm() to send as application/x-www-form-urlencoded
+            $response = Http::asForm()->post("{$this->baseUrl}/validate-authcode", [
+                'grant_type' => 'authorization_code',
+                'appIdHash' => $appIdHash,
+                'code' => $authCode,
+            ]);
             
             $this->logInfo('Fyers token exchange response: ' . $response->status() . ' - ' . $response->body());
             
             if ($response->successful()) {
                 $data = $response->json();
+                
+                // Check for API-level errors
+                if (isset($data['s']) && $data['s'] === 'error') {
+                    $errorMsg = $data['message'] ?? 'Unknown error';
+                    $this->logError('Fyers API error: ' . $errorMsg);
+                    return ['success' => false, 'error' => $errorMsg];
+                }
+                
                 $accessToken = $data['access_token'] ?? null;
                 
                 if ($accessToken) {
