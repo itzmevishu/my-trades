@@ -84,8 +84,7 @@ class ScanLogResource extends Resource
                     ->tooltip(fn ($record) => $record->rejection_reason)
                     ->searchable(),
             ])
-            ->defaultSort('scan_date', 'desc')
-            ->defaultSort('scan_time', 'desc')
+            ->defaultSort('id', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('result')
                     ->options([
