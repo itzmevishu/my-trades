@@ -28,7 +28,7 @@ class ClaudeAPIService extends BaseService
     /**
      * Claude model to use
      */
-    private string $model = 'claude-sonnet-4-20250514';
+    private string $model = 'claude-sonnet-4-6';
 
     /**
      * Score a trade setup for confluence
