@@ -40,7 +40,7 @@
                 // Prepare candle data
                 const candleData = @json($candles);
                 const scanPrice = {{ $scanLog->current_price }};
-                const scanTime = new Date('{{ $scanLog->scan_date }} {{ \Carbon\Carbon::parse($scanLog->scan_time)->format('H:i:s') }}').getTime();
+                const scanTime = new Date('{{ $scanLog->scan_date->format('Y-m-d') }} {{ \Carbon\Carbon::parse($scanLog->scan_time)->format('H:i:s') }}').getTime();
                 const ema20 = {{ $scanLog->ema_20 }};
                 const ema100 = {{ $scanLog->ema_100 }};
                 const ema200 = {{ $scanLog->ema_200 }};

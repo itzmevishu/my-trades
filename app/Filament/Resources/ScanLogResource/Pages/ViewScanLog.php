@@ -118,7 +118,11 @@ class ViewScanLog extends ViewRecord
      */
     protected function getHistoricalCandles(): array
     {
-        $scanDateTime = Carbon::parse($this->record->scan_date . ' ' . $this->record->scan_time);
+        // Properly combine date and time fields
+        $scanDateTime = $this->record->scan_date->copy()
+            ->setTimeFromTimeString(
+                Carbon::parse($this->record->scan_time)->format('H:i:s')
+            );
         
         // Get 50 candles before the scan and 10 after (if available)
         $startTime = $scanDateTime->copy()->subMinutes(50 * 15); // 15-min candles
