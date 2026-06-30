@@ -115,6 +115,10 @@ class PaperTradingService extends BaseService
             return null;
         }
 
+        // Calculate EMAs early for logging
+        $emas = $this->emaCalculator->calculateMultipleEMAs($candles);
+        $currentPrice = $candles[count($candles) - 1]['close'];
+
         // Use Advanced Pattern Scorer (new sophisticated system)
         $scoringResult = $this->advancedScorer->scoreSetup($candles);
         
@@ -125,6 +129,9 @@ class PaperTradingService extends BaseService
             'recommendation' => $scoringResult['recommendation']
         ]);
 
+        // Also run legacy pattern detector for compatibility
+        $patternResult = $this->patternDetector->detectPatternWithDetails($candles);
+
         // Minimum score threshold (configurable)
         $minScore = setting('min_setup_score', 70);
         
@@ -134,28 +141,38 @@ class PaperTradingService extends BaseService
                 'min_required' => $minScore
             ]);
             
+            // Build detailed rejection reason with score breakdown
+            $breakdown = $scoringResult['breakdown'];
+            $detailedReason = "Score {$scoringResult['score']}/100 (need {$minScore}+) - {$scoringResult['recommendation']}\n\n";
+            $detailedReason .= "Score Breakdown:\n";
+            $detailedReason .= "• Trend Filter: {$breakdown['trend']}/35 pts\n";
+            $detailedReason .= "• Price Action: {$breakdown['price_action']}/25 pts\n";
+            $detailedReason .= "• EMA Confluence: {$breakdown['ema_confluence']}/20 pts\n";
+            $detailedReason .= "• Market Structure: {$breakdown['market_structure']}/15 pts\n";
+            $detailedReason .= "• Volume: {$breakdown['volume']}/5 pts";
+            
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
                 'scan_time' => now()->toTimeString(),
                 'result' => 'rejected_score',
-                'current_price' => $candles[count($candles) - 1]['close'],
-                'rejection_reason' => "Score {$scoringResult['score']}/100 (need {$minScore}+) - " . $scoringResult['recommendation'],
+                'pattern_detected' => $patternResult['pattern'] ?? 'score_based',
+                'pattern_direction' => $scoringResult['direction'],
+                'current_price' => $currentPrice,
+                'ema_20' => $emas['ema_20'],
+                'ema_100' => $emas['ema_100'],
+                'ema_200' => $emas['ema_200'],
+                'ema_confluence_count' => 0,
+                'claude_score' => null,
+                'rejection_reason' => $detailedReason,
             ]);
             return null;
         }
-
-        // Also run legacy pattern detector for compatibility
-        $patternResult = $this->patternDetector->detectPatternWithDetails($candles);
         
         $this->logInfo('Advanced scoring passed', [
             'pattern' => $patternResult['pattern'] ?? 'none',
             'score' => $scoringResult['score'],
             'direction' => $scoringResult['direction']
         ]);
-
-        // Calculate EMAs
-        $emas = $this->emaCalculator->calculateMultipleEMAs($candles);
-        $currentPrice = $candles[count($candles) - 1]['close'];
         
         // The advanced scorer already validated trend, EMA alignment, and pullbacks
         // It uses a weighted scoring system so we trust its judgment
