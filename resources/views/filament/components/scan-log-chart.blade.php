@@ -34,21 +34,30 @@
                     </div>
                     
                     @php
-                        $scanAge = now()->diffInHours($scanLog->scan_date);
+                        // Properly calculate scan age using both date and time
+                        $scanDateTime = $scanLog->scan_date->copy()->setTimeFromTimeString(
+                            \Carbon\Carbon::parse($scanLog->scan_time)->format('H:i:s')
+                        );
+                        $scanAge = $scanDateTime->diffInHours(now(), false);
+                        $isRecent = $scanAge >= 0 && $scanAge < 72; // Recent if within last 3 days
                     @endphp
                     
-                    @if($scanAge < 72)
+                    @if($isRecent)
                         <div class="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
                             <p class="text-xs font-semibold text-green-700 dark:text-green-400">✅ Recent Scan</p>
                             <p class="text-xs text-green-600 dark:text-green-500 mt-1">
-                                This scan is recent ({{ round($scanAge) }} hours old). Next trading scan will repopulate the cache with fresh data.
+                                @if($scanAge < 1)
+                                    This scan is very recent ({{ round($scanAge * 60) }} minutes old). Next trading scan will repopulate the cache with fresh data.
+                                @else
+                                    This scan is recent ({{ round($scanAge, 1) }} hours old). Next trading scan will repopulate the cache with fresh data.
+                                @endif
                             </p>
                         </div>
                     @else
                         <div class="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
                             <p class="text-xs font-semibold text-amber-700 dark:text-amber-400">⚠️ Old Scan</p>
                             <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                                This scan is {{ round($scanAge / 24) }} days old. Historical data may have been cleaned per retention policy (30 days).
+                                This scan is {{ round(abs($scanAge) / 24, 1) }} days old. Historical data may have been cleaned per retention policy (30 days).
                             </p>
                         </div>
                     @endif
