@@ -25,6 +25,7 @@ class AdvancedPatternScorer extends BaseService
 {
     private EMACalculator $emaCalculator;
     private array $scoreBreakdown = [];
+    private array $numericScores = [];
 
     public function __construct()
     {
@@ -40,27 +41,33 @@ class AdvancedPatternScorer extends BaseService
     public function scoreSetup(array $candles): array
     {
         $this->scoreBreakdown = [];
+        $this->numericScores = [];
         $totalScore = 0;
 
         // Step 1: Trend Filter (Most Important) - Max 35 points
         $trendScore = $this->scoreTrend($candles);
         $totalScore += $trendScore;
+        $this->numericScores['trend'] = $trendScore;
 
         // Step 2: Price Action Quality - Max 25 points
         $priceActionScore = $this->scorePriceAction($candles);
         $totalScore += $priceActionScore;
+        $this->numericScores['price_action'] = $priceActionScore;
 
         // Step 3: EMA Confluence - Max 20 points
         $emaConfluenceScore = $this->scoreEMAConfluence($candles);
         $totalScore += $emaConfluenceScore;
+        $this->numericScores['ema_confluence'] = $emaConfluenceScore;
 
         // Step 4: Market Structure - Max 15 points
         $structureScore = $this->scoreMarketStructure($candles);
         $totalScore += $structureScore;
+        $this->numericScores['market_structure'] = $structureScore;
 
         // Step 5: Volume Confirmation - Max 5 points
         $volumeScore = $this->scoreVolume($candles);
         $totalScore += $volumeScore;
+        $this->numericScores['volume'] = $volumeScore;
 
         // Determine grade and recommendation
         $grade = $this->getGrade($totalScore);
@@ -70,6 +77,7 @@ class AdvancedPatternScorer extends BaseService
             'score' => $totalScore,
             'grade' => $grade,
             'breakdown' => $this->scoreBreakdown,
+            'scores' => $this->numericScores,
             'recommendation' => $recommendation,
             'direction' => $this->getSetupDirection($candles),
         ];

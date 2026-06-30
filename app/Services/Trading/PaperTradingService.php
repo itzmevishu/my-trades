@@ -142,14 +142,14 @@ class PaperTradingService extends BaseService
             ]);
             
             // Build detailed rejection reason with score breakdown
-            $breakdown = $scoringResult['breakdown'];
+            $scores = $scoringResult['scores'];
             $detailedReason = "Score {$scoringResult['score']}/100 (need {$minScore}+) - {$scoringResult['recommendation']}\n\n";
             $detailedReason .= "Score Breakdown:\n";
-            $detailedReason .= "• Trend Filter: {$breakdown['trend']}/35 pts\n";
-            $detailedReason .= "• Price Action: {$breakdown['price_action']}/25 pts\n";
-            $detailedReason .= "• EMA Confluence: {$breakdown['ema_confluence']}/20 pts\n";
-            $detailedReason .= "• Market Structure: {$breakdown['market_structure']}/15 pts\n";
-            $detailedReason .= "• Volume: {$breakdown['volume']}/5 pts";
+            $detailedReason .= "• Trend Filter: {$scores['trend']}/35 pts\n";
+            $detailedReason .= "• Price Action: {$scores['price_action']}/25 pts\n";
+            $detailedReason .= "• EMA Confluence: {$scores['ema_confluence']}/20 pts\n";
+            $detailedReason .= "• Market Structure: {$scores['market_structure']}/15 pts\n";
+            $detailedReason .= "• Volume: {$scores['volume']}/5 pts";
             
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
