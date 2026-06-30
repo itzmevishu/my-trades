@@ -59,13 +59,18 @@ class SettingResource extends Resource
                         // Boolean field
                         Forms\Components\Toggle::make('value')
                             ->label('Enabled')
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'boolean')
-                            ->afterStateHydrated(function ($component, $state) {
-                                // Convert database string ('1'/'0') to boolean for the toggle
-                                $boolValue = in_array($state, ['1', 1, true, 'true', 'yes', 'on'], true);
-                                $component->state($boolValue);
+                            ->hidden(fn (Forms\Get $get) => $get('type') !== 'boolean')
+                            ->afterStateHydrated(function ($component, $state, Forms\Get $get) {
+                                // Only process if this is a boolean type
+                                if ($get('type') === 'boolean') {
+                                    // Convert database string ('1'/'0') to boolean for the toggle
+                                    $boolValue = in_array($state, ['1', 1, true, 'true', 'yes', 'on'], true);
+                                    $component->state($boolValue);
+                                }
                             })
-                            ->dehydrateStateUsing(fn ($state) => $state ? '1' : '0')
+                            ->dehydrateStateUsing(fn ($state, Forms\Get $get) => 
+                                $get('type') === 'boolean' ? ($state ? '1' : '0') : null
+                            )
                             ->helperText(function (Forms\Get $get) {
                                 $key = $get('key');
                                 return match($key) {
@@ -79,7 +84,7 @@ class SettingResource extends Resource
                         Forms\Components\TextInput::make('value')
                             ->label('Value')
                             ->numeric()
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'integer')
+                            ->hidden(fn (Forms\Get $get) => $get('type') !== 'integer')
                             ->helperText(function (Forms\Get $get) {
                                 $key = $get('key');
                                 return match($key) {
@@ -94,7 +99,7 @@ class SettingResource extends Resource
                             ->label('Value')
                             ->numeric()
                             ->step(0.01)
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'decimal')
+                            ->hidden(fn (Forms\Get $get) => $get('type') !== 'decimal')
                             ->helperText(function (Forms\Get $get) {
                                 $key = $get('key');
                                 return match($key) {
@@ -110,14 +115,14 @@ class SettingResource extends Resource
                         Forms\Components\TextInput::make('value')
                             ->label('Value')
                             ->maxLength(255)
-                            ->visible(fn (Forms\Get $get) => in_array($get('type'), ['string', null]))
+                            ->hidden(fn (Forms\Get $get) => !in_array($get('type'), ['string', null]))
                             ->helperText('Enter text value'),
 
                         // JSON field
                         Forms\Components\Textarea::make('value')
                             ->label('JSON Value')
                             ->rows(6)
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'json')
+                            ->hidden(fn (Forms\Get $get) => $get('type') !== 'json')
                             ->helperText('Enter valid JSON'),
                     ]),
             ]);
