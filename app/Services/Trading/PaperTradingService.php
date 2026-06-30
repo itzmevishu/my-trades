@@ -8,6 +8,7 @@ use App\Services\Fyers\FyersDataService;
 use App\Services\Analysis\EMACalculator;
 use App\Services\Analysis\PatternDetector;
 use App\Services\Claude\ClaudeAPIService;
+use App\Services\Notifications\TelegramNotificationService;
 use App\Models\Trade;
 use App\Models\ScanLog;
 use Carbon\Carbon;
@@ -371,6 +372,17 @@ class PaperTradingService extends BaseService
             'trade_id' => $trade->id,
         ]);
 
+        // Send trade entry notification
+        try {
+            $telegram = new TelegramNotificationService();
+            $telegram->notifyTradeEntry(array_merge($trade->toArray(), [
+                'max_risk' => $riskParams['max_risk'],
+                'expected_profit' => $riskParams['expected_profit'],
+            ]));
+        } catch (\Exception $e) {
+            $this->logError('Failed to send trade entry notification: ' . $e->getMessage());
+        }
+
         return $trade->toArray();
     }
 
@@ -468,6 +480,21 @@ class PaperTradingService extends BaseService
             'rr' => $rrAchieved,
             'outcome' => $outcome
         ]);
+
+        // Send trade exit notification
+        try {
+            $telegram = new TelegramNotificationService();
+            $entryTime = Carbon::parse($trade->date . ' ' . $trade->entry_time);
+            $duration = now()->diff($entryTime)->format('%H:%I');
+            
+            $telegram->notifyTradeExit(array_merge($trade->fresh()->toArray(), [
+                'duration' => $duration,
+                'pnl' => $pnl,
+                'roi' => $trade->capital > 0 ? round(($pnl / $trade->capital) * 100, 2) : 0,
+            ]));
+        } catch (\Exception $e) {
+            $this->logError('Failed to send trade exit notification: ' . $e->getMessage());
+        }
 
         return true;
     }
