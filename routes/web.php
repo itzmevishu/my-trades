@@ -19,10 +19,8 @@ Route::get('/', function () {
     $strategyVersion = $currentStrategy ? $currentStrategy->version : 1;
     
     $now = now('Asia/Kolkata');
-    
-    // Get trading hours from settings (existing: trading_start_time, trading_end_time)
-    $tradingStart = now('Asia/Kolkata')->setTimeFromTimeString(setting('trading_start_time', '11:15:00'));
-    $tradingEnd = now('Asia/Kolkata')->setTimeFromTimeString(setting('trading_end_time', '14:00:00'));
+    $tradingStart = $now->copy()->setTime(11, 15);
+    $tradingEnd = $now->copy()->setTime(14, 0);
     $inTradingWindow = $now->between($tradingStart, $tradingEnd) && $now->isWeekday();
     $todayTrades = Trade::whereDate('entry_time', $now->toDateString())->count();
     
@@ -50,6 +48,13 @@ Route::get('/', function () {
         ],
     ]);
 });
+
+Route::get('/fyers/auth', function () {
+    $authService = new FyersAuthService();
+    $authUrl = $authService->generateAuthUrl();
+    
+    return redirect()->away($authUrl);
+})->name('fyers.auth');
 
 Route::get('/callback', function (Request $request) {
     $authCode = $request->query('auth_code');
