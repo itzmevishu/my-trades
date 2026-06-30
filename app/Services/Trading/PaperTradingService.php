@@ -137,7 +137,7 @@ class PaperTradingService extends BaseService
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
                 'scan_time' => now()->toTimeString(),
-                'result' => 'low_score',
+                'result' => 'rejected_score',
                 'current_price' => $candles[count($candles) - 1]['close'],
                 'rejection_reason' => "Score {$scoringResult['score']}/100 (need {$minScore}+) - " . $scoringResult['recommendation'],
             ]);
