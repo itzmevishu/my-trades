@@ -60,7 +60,11 @@ class SettingResource extends Resource
                         Forms\Components\Toggle::make('value')
                             ->label('Enabled')
                             ->visible(fn (Forms\Get $get) => $get('type') === 'boolean')
-                            ->formatStateUsing(fn ($state) => filter_var($state, FILTER_VALIDATE_BOOLEAN))
+                            ->afterStateHydrated(function ($component, $state) {
+                                // Convert database string ('1'/'0') to boolean for the toggle
+                                $boolValue = in_array($state, ['1', 1, true, 'true', 'yes', 'on'], true);
+                                $component->state($boolValue);
+                            })
                             ->dehydrateStateUsing(fn ($state) => $state ? '1' : '0')
                             ->helperText(function (Forms\Get $get) {
                                 $key = $get('key');
