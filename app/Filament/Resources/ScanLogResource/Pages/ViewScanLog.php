@@ -38,7 +38,9 @@ class ViewScanLog extends ViewRecord
                             ->formatStateUsing(fn ($state) => ucwords(str_replace('_', ' ', $state))),
                         TextEntry::make('pattern_detected')
                             ->label('Pattern')
-                            ->formatStateUsing(fn ($state) => $state ? ucwords(str_replace('_', ' ', $state)) : 'None'),
+                            ->formatStateUsing(fn ($state) => $state ? ucwords(str_replace('_', ' ', $state)) : 'None')
+                            ->placeholder('None')
+                            ->color(fn ($state) => $state ? 'success' : 'gray'),
                         TextEntry::make('pattern_direction')
                             ->label('Direction')
                             ->badge()
@@ -47,11 +49,18 @@ class ViewScanLog extends ViewRecord
                                 'bearish' => 'danger',
                                 default => 'gray',
                             })
-                            ->formatStateUsing(fn ($state) => $state ? ucfirst($state) : '-'),
+                            ->formatStateUsing(fn ($state) => $state ? ucfirst($state) : 'N/A')
+                            ->placeholder('N/A'),
                         TextEntry::make('current_price')
                             ->label('Price at Scan')
-                            ->formatStateUsing(fn ($state) => number_format($state, 2)),
-                    ])->columns(3),
+                            ->formatStateUsing(fn ($state) => '₹ ' . number_format($state, 2))
+                            ->copyable()
+                            ->copyMessage('Price copied'),
+                    ])
+                    ->columns(3)
+                    ->description(fn ($record) => 
+                        'Scan executed at ' . Carbon::parse($record->scan_date . ' ' . $record->scan_time)->format('M d, Y H:i:s')
+                    ),
                     
                 Section::make('Market Analysis Chart')
                     ->schema([
@@ -73,28 +82,58 @@ class ViewScanLog extends ViewRecord
                     ->schema([
                         TextEntry::make('ema_20')
                             ->label('20 EMA')
-                            ->formatStateUsing(fn ($state) => number_format($state, 2)),
+                            ->formatStateUsing(fn ($state) => $state ? number_format($state, 2) : 'N/A')
+                            ->placeholder('N/A'),
                         TextEntry::make('ema_100')
                             ->label('100 EMA')
-                            ->formatStateUsing(fn ($state) => number_format($state, 2)),
+                            ->formatStateUsing(fn ($state) => $state ? number_format($state, 2) : 'N/A')
+                            ->placeholder('N/A'),
                         TextEntry::make('ema_200')
                             ->label('200 EMA')
-                            ->formatStateUsing(fn ($state) => number_format($state, 2)),
+                            ->formatStateUsing(fn ($state) => $state ? number_format($state, 2) : 'N/A')
+                            ->placeholder('N/A'),
                         TextEntry::make('ema_confluence_count')
-                            ->label('EMA Confluence'),
+                            ->label('EMA Confluence')
+                            ->formatStateUsing(fn ($state) => $state ?? '0'),
                         TextEntry::make('claude_score')
                             ->label('Claude AI Score')
-                            ->formatStateUsing(fn ($state) => $state ? number_format($state, 1) . '/10' : '-'),
-                    ])->columns(3),
+                            ->formatStateUsing(fn ($state) => $state ? number_format($state, 1) . '/10' : 'Not Scored')
+                            ->placeholder('Not Scored'),
+                    ])
+                    ->columns(3)
+                    ->description('EMA values at scan time'),
                     
                 Section::make('Decision Analysis')
                     ->schema([
                         TextEntry::make('rejection_reason')
-                            ->label('Details')
+                            ->label('Why This Scan Failed')
+                            ->formatStateUsing(function ($state) {
+                                if (empty($state)) {
+                                    return 'No rejection reason available';
+                                }
+                                
+                                // Format rejection reasons for better readability
+                                $lines = explode("\n", $state);
+                                $formatted = [];
+                                
+                                foreach ($lines as $line) {
+                                    $line = trim($line);
+                                    if (empty($line)) continue;
+                                    
+                                    // Add bullet points for better visual hierarchy
+                                    if (str_contains($line, ':')) {
+                                        $formatted[] = '• ' . $line;
+                                    } else {
+                                        $formatted[] = $line;
+                                    }
+                                }
+                                
+                                return '<div class="space-y-1">' . implode('<br>', $formatted) . '</div>';
+                            })
                             ->html()
-                            ->formatStateUsing(fn ($state) => nl2br(e($state)))
                             ->columnSpanFull(),
                     ])
+                    ->description('Detailed breakdown of why no trade was taken')
                     ->visible(fn ($record) => !empty($record->rejection_reason)),
                     
                 Section::make('Related Trade')
