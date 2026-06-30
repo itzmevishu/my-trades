@@ -53,8 +53,8 @@ class FyersDataService extends BaseService
         $accessToken = $this->authService->getAccessToken();
         
         if (!$accessToken) {
-            $this->logWarning('No Fyers access token. Using simulator.');
-            return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
+            $this->logError('No Fyers access token configured');
+            throw new \Exception('Fyers API access token not available. Please authenticate via /fyers/auth');
         }
         
         try {
@@ -110,12 +110,11 @@ class FyersDataService extends BaseService
                 'symbol' => $this->convertSymbol($symbol),
                 'resolution' => $resolution,
             ]);
-            $this->logInfo('Falling back to simulator');
-            return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
+            throw new \Exception('Fyers API returned error: ' . $response->body());
             
         } catch (\Exception $e) {
             $this->logError('Fyers fetch candles exception: ' . $e->getMessage());
-            return FyersSimulator::generateCandles($symbol, $timeframe, $limit);
+            throw $e;
         }
     }
 
@@ -127,7 +126,7 @@ class FyersDataService extends BaseService
         $accessToken = $this->authService->getAccessToken();
         
         if (!$accessToken) {
-            return FyersSimulator::getSpotPrice();
+            throw new \Exception('Fyers API access token not available');
         }
         
         try {
@@ -150,11 +149,11 @@ class FyersDataService extends BaseService
             }
             
             $this->logError('Fyers spot price error: ' . $response->body());
-            return FyersSimulator::getSpotPrice();
+            throw new \Exception('Fyers API error getting spot price: ' . $response->body());
             
         } catch (\Exception $e) {
             $this->logError('Fyers spot price exception: ' . $e->getMessage());
-            return FyersSimulator::getSpotPrice();
+            throw $e;
         }
     }
 
@@ -166,8 +165,7 @@ class FyersDataService extends BaseService
         $accessToken = $this->authService->getAccessToken();
         
         if (!$accessToken) {
-            // Extract strike and type from symbol for simulator
-            return $this->simulateOptionLTP($symbol);
+            throw new \Exception('Fyers API access token not available');
         }
         
         try {
@@ -190,11 +188,11 @@ class FyersDataService extends BaseService
             }
             
             $this->logError('Fyers option LTP error: ' . $response->body());
-            return $this->simulateOptionLTP($symbol);
+            throw new \Exception('Fyers API error getting option LTP: ' . $response->body());
             
         } catch (\Exception $e) {
             $this->logError('Fyers option LTP exception: ' . $e->getMessage());
-            return $this->simulateOptionLTP($symbol);
+            throw $e;
         }
     }
     
