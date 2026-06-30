@@ -3,7 +3,6 @@
 namespace App\Services\Trading;
 
 use App\Services\BaseService;
-use App\Services\Fyers\FyersSimulator;
 use App\Services\Fyers\FyersDataService;
 use App\Services\Analysis\EMACalculator;
 use App\Services\Analysis\PatternDetector;
@@ -96,17 +95,16 @@ class PaperTradingService extends BaseService
             return null;
         }
 
-        // Get market data (real or simulated based on settings)
-        $useRealData = setting('use_real_data', false);
+        // Get real market data from Fyers API
+        $this->logInfo('Fetching real market data from Fyers API');
+        $timeframe = setting('trading_timeframe', '15');
+        $lookback = setting('candle_lookback', 250);
         
-        if ($useRealData) {
-            $this->logInfo('Fetching REAL market data from Fyers API');
-            $timeframe = setting('trading_timeframe', '15m');
-            $lookback = setting('candle_lookback', 250);
+        try {
             $candles = $this->fyersData->fetchCandles('NSE:NIFTYBANK-INDEX', $timeframe, $lookback);
-        } else {
-            $this->logInfo('Using SIMULATED market data');
-            $candles = FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '15', 250);
+        } catch (\Exception $e) {
+            $this->logError('Failed to fetch market data: ' . $e->getMessage());
+            return null;
         }
         
         if (!$candles || count($candles) < 200) {

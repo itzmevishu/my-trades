@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Services\Fyers\FyersDataService;
-use App\Services\Fyers\FyersSimulator;
 use App\Services\Analysis\PatternDetector;
 use App\Services\Analysis\EMACalculator;
 use App\Models\ScanLog;
@@ -23,10 +22,7 @@ use Carbon\Carbon;
  */
 class DiagnosePatternCommand extends Command
 {
-    protected $signature = 'trading:diagnose 
-                            {--date= : Date to analyze (YYYY-MM-DD format)}
-                            {--time= : Specific time to analyze (HH:MM format)}
-                            {--candles=5 : Number of recent candles to display}';
+    protected $signature = 'trading:diagnose {--date= : Date to analyze (YYYY-MM-DD format)} {--time= : Specific time to analyze (HH:MM format)} {--candles=5 : Number of recent candles to display} {--scan-history : Scan last 3 days for missed patterns}';
 
     protected $description = 'Deep diagnostic analysis of pattern detection';
 
@@ -50,23 +46,20 @@ class DiagnosePatternCommand extends Command
         $this->showScanLogs($date);
 
         // Get market data
-        $this->info('📊 Fetching Market Data...');
-        $useRealData = setting('use_real_data', false);
+        $this->info('📊 Fetching Real Market Data from Fyers API...');
         
-        if ($useRealData) {
-            try {
-                $fyersData = new FyersDataService();
-                $candles = $fyersData->fetchCandles('NSE:NIFTYBANK-INDEX', '15', 250);
-                $this->line('Source: Fyers API (Real Data)');
-            } catch (\Exception $e) {
-                $this->warn('⚠️  Could not fetch real data: ' . $e->getMessage());
-                $this->warn('Falling back to simulated data...');
-                $candles = FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '15', 250);
-                $this->line('Source: Simulator (Demo Data)');
-            }
-        } else {
-            $candles = FyersSimulator::generateCandles('NSE:NIFTYBANK-INDEX', '15', 250);
-            $this->line('Source: Simulator (Demo Data)');
+        try {
+            $fyersData = new FyersDataService();
+            $candles = $fyersData->fetchCandles('NSE:NIFTYBANK-INDEX', '15', 250);
+            $this->info('✅ Successfully fetched real market data');
+        } catch (\Exception $e) {
+            $this->error('❌ Failed to fetch market data: ' . $e->getMessage());
+            $this->newLine();
+            $this->line('💡 To fix this:');
+            $this->line('1. Authenticate with Fyers: Visit /fyers/auth in your browser');
+            $this->line('2. Make sure Fyers credentials are configured in .env');
+            $this->line('3. Check if access token has expired');
+            return Command::FAILURE;
         }
 
         if (!$candles || count($candles) < 2) {
@@ -105,6 +98,13 @@ class DiagnosePatternCommand extends Command
         // Run individual pattern checks
         $this->runDetailedPatternChecks($candles);
 
+        // Historical scan if requested
+        if ($this->option('scan-history')) {
+            $this->newLine();
+            $this->info('📅 Scanning Last 3 Days for Bearish Patterns...');
+            $this->scanHistoricalPatterns($candles);
+        }
+
         // Suggestions
         $this->newLine();
         $this->info('💡 Next Steps:');
@@ -112,7 +112,8 @@ class DiagnosePatternCommand extends Command
         $this->line('2. Check if pattern criteria are too strict');
         $this->line('3. Verify candle data quality (OHLC values)');
         $this->line('4. Consider adjusting thresholds in PatternDetector.php');
-        $this->line('5. Run: php artisan trading:scan --verbose for live debugging');
+        $this->line('5. Run with --scan-history to find all patterns in last 3 days');
+        $this->line('6. Run: php artisan trading:scan --verbose for live debugging');
 
         return Command::SUCCESS;
     }
@@ -452,6 +453,113 @@ class DiagnosePatternCommand extends Command
         ];
 
         $this->table(['Check', 'Status', 'Details'], $checks);
+    }
+
+    private function scanHistoricalPatterns(array $candles): void
+    {
+        // We have 250 candles (15-min each), covering last ~2.6 days of trading
+        // Scan through all windows to find patterns
+        $patternDetector = new PatternDetector();
+        $foundPatterns = [];
+        
+        // Start from candle 200 onwards (last ~50 candles = ~12 hours)
+        $startIdx = max(0, count($candles) - 288); // Last 3 days worth (3*24*60/15 = 288 candles)
+        
+        $this->line("Analyzing " . (count($candles) - $startIdx) . " candles (last 3 trading days)...");
+        $this->newLine();
+        
+        for ($i = $startIdx; $i < count($candles); $i++) {
+            if ($i < 2) continue; // Need at least 2 candles for pattern detection
+            
+            // Get window of candles up to current position
+            $window = array_slice($candles, max(0, $i - 50), $i + 1);
+            
+            // Detect pattern at this point
+            $pattern = $patternDetector->detectPattern($window);
+            
+            if ($pattern) {
+                $direction = $this->getPatternDirection($pattern);
+                $candle = $candles[$i];
+                
+                $foundPatterns[] = [
+                    'index' => $i,
+                    'pattern' => $pattern,
+                    'direction' => $direction,
+                    'candle' => $candle,
+                ];
+            }
+        }
+        
+        // Display found patterns
+        if (empty($foundPatterns)) {
+            $this->warn('  No patterns detected in the last 3 days of data');
+            return;
+        }
+        
+        $this->info("✅ Found " . count($foundPatterns) . " patterns in historical data:");
+        $this->newLine();
+        
+        // Group by pattern type
+        $bearishPatterns = array_filter($foundPatterns, fn($p) => $p['direction'] === 'bearish');
+        $bullishPatterns = array_filter($foundPatterns, fn($p) => $p['direction'] === 'bullish');
+        $neutralPatterns = array_filter($foundPatterns, fn($p) => $p['direction'] === 'neutral');
+        
+        if (!empty($bearishPatterns)) {
+            $this->line('🔻 BEARISH PATTERNS (' . count($bearishPatterns) . '):');
+            $table = [];
+            foreach ($bearishPatterns as $p) {
+                $table[] = [
+                    $p['index'],
+                    str_replace('_', ' ', ucwords($p['pattern'])),
+                    number_format($p['candle']['open'], 2),
+                    number_format($p['candle']['high'], 2),
+                    number_format($p['candle']['low'], 2),
+                    number_format($p['candle']['close'], 2),
+                ];
+            }
+            $this->table(['Candle #', 'Pattern', 'Open', 'High', 'Low', 'Close'], $table);
+            $this->newLine();
+        }
+        
+        if (!empty($bullishPatterns)) {
+            $this->line('🔺 BULLISH PATTERNS (' . count($bullishPatterns) . '):');
+            $table = [];
+            foreach ($bullishPatterns as $p) {
+                $table[] = [
+                    $p['index'],
+                    str_replace('_', ' ', ucwords($p['pattern'])),
+                    number_format($p['candle']['open'], 2),
+                    number_format($p['candle']['high'], 2),
+                    number_format($p['candle']['low'], 2),
+                    number_format($p['candle']['close'], 2),
+                ];
+            }
+            $this->table(['Candle #', 'Pattern', 'Open', 'High', 'Low', 'Close'], $table);
+            $this->newLine();
+        }
+        
+        if (!empty($neutralPatterns)) {
+            $this->line('⚪ NEUTRAL PATTERNS (' . count($neutralPatterns) . '):');
+            $table = [];
+            foreach ($neutralPatterns as $p) {
+                $table[] = [
+                    $p['index'],
+                    str_replace('_', ' ', ucwords($p['pattern'])),
+                    number_format($p['candle']['open'], 2),
+                    number_format($p['candle']['high'], 2),
+                    number_format($p['candle']['low'], 2),
+                    number_format($p['candle']['close'], 2),
+                ];
+            }
+            $this->table(['Candle #', 'Pattern', 'Open', 'High', 'Low', 'Close'], $table);
+            $this->newLine();
+        }
+        
+        // Summary
+        $this->info('📊 Pattern Distribution:');
+        $this->line('  🔻 Bearish: ' . count($bearishPatterns));
+        $this->line('  🔺 Bullish: ' . count($bullishPatterns));
+        $this->line('  ⚪ Neutral: ' . count($neutralPatterns));
     }
 
     private function getPatternDirection(string $pattern): string
