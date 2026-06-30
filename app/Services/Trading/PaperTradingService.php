@@ -250,7 +250,7 @@ class PaperTradingService extends BaseService
                 'ema_20' => $emas['ema_20'],
                 'ema_100' => $emas['ema_100'],
                 'ema_200' => $emas['ema_200'],
-                'ema_confluence_count' => $confluenceCount,
+                'ema_confluence_count' => 0, // Using 20 EMA directional check instead
                 'claude_score' => $claudeScore['score'],
                 'rejection_reason' => "Claude score below threshold ({$claudeScore['score']} < {$minScore}). Reason: {$claudeScore['reasoning']}",
             ]);
