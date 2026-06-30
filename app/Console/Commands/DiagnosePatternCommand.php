@@ -580,13 +580,13 @@ class DiagnosePatternCommand extends Command
         $scorer = new AdvancedPatternScorer();
         $result = $scorer->scoreSetup($candles);
 
-        // Display score
+        // Display score with valid colors
         $scoreColor = match(true) {
-            $result['score'] >= 90 => 'info',
-            $result['score'] >= 80 => 'info',
-            $result['score'] >= 70 => 'comment',
-            $result['score'] >= 60 => 'comment',
-            default => 'error'
+            $result['score'] >= 90 => 'green',
+            $result['score'] >= 80 => 'cyan',
+            $result['score'] >= 70 => 'yellow',
+            $result['score'] >= 60 => 'yellow',
+            default => 'red'
         };
 
         $this->newLine();
