@@ -59,7 +59,9 @@ class ViewScanLog extends ViewRecord
                     ])
                     ->columns(3)
                     ->description(fn ($record) => 
-                        'Scan executed at ' . Carbon::parse($record->scan_date . ' ' . $record->scan_time)->format('M d, Y H:i:s')
+                        'Scan executed at ' . $record->scan_date->copy()
+                            ->setTimeFromTimeString(Carbon::parse($record->scan_time)->format('H:i:s'))
+                            ->format('M d, Y H:i:s')
                     ),
                     
                 Section::make('Market Analysis Chart')
