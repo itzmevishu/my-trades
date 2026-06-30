@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use App\Services\Fyers\FyersDataService;
 use App\Services\Analysis\PatternDetector;
 use App\Services\Analysis\EMACalculator;
+use App\Services\Analysis\AdvancedPatternScorer;
 use App\Models\ScanLog;
 use Carbon\Carbon;
 
@@ -94,6 +95,11 @@ class DiagnosePatternCommand extends Command
 
         // Show EMA analysis
         $this->showEMAAnalysis($candles);
+
+        // Run Advanced Pattern Scorer (NEW - Sophisticated Scoring)
+        $this->newLine();
+        $this->info('🎯 Advanced Pattern Scoring (Weighted System):');
+        $this->runAdvancedScoring($candles);
 
         // Run individual pattern checks
         $this->runDetailedPatternChecks($candles);
@@ -568,4 +574,45 @@ class DiagnosePatternCommand extends Command
         if (str_contains($pattern, 'bearish')) return 'bearish';
         return 'neutral';
     }
+
+    private function runAdvancedScoring(array $candles): void
+    {
+        $scorer = new AdvancedPatternScorer();
+        $result = $scorer->scoreSetup($candles);
+
+        // Display score
+        $scoreColor = match(true) {
+            $result['score'] >= 90 => 'info',
+            $result['score'] >= 80 => 'info',
+            $result['score'] >= 70 => 'comment',
+            $result['score'] >= 60 => 'comment',
+            default => 'error'
+        };
+
+        $this->newLine();
+        $this->line("📊 <fg={$scoreColor}>Final Score: {$result['score']}/100 (Grade: {$result['grade']})</>");
+        $this->line("🎯 <fg={$scoreColor}>{$result['recommendation']}</>");
+        $this->line("📈 Direction: " . ucfirst($result['direction']));
+        $this->newLine();
+
+        // Show breakdown
+        $this->line('💯 Score Breakdown:');
+        foreach ($result['breakdown'] as $category => $detail) {
+            $this->line("   " . $detail);
+        }
+        
+        $this->newLine();
+        
+        // Interpretation
+        if ($result['score'] >= 80) {
+            $this->info('✅ Excellent setup - High probability trade');
+        } elseif ($result['score'] >= 70) {
+            $this->comment('🟡 Good setup - Consider entry with tight SL');
+        } elseif ($result['score'] >= 60) {
+            $this->comment('⚠️  Marginal setup - Watchlist only');
+        } else {
+            $this->error('❌ Low probability - Skip this setup');
+        }
+    }
 }
+
