@@ -1,8 +1,65 @@
 <div class="scan-log-chart">
     @if(empty($candles))
-        <div class="text-center py-8 text-gray-500">
-            <p>No historical candle data available for this scan time.</p>
-            <p class="text-sm mt-2">The data may have been cleaned up due to retention policies.</p>
+        <div class="text-center py-12">
+            <div class="text-gray-400 mb-4">
+                <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                📊 No Chart Data Available
+            </h3>
+            <p class="text-gray-600 dark:text-gray-400 mb-4">
+                Historical candle data for this scan time is not in the cache.
+            </p>
+            
+            <div class="max-w-md mx-auto text-left bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div class="text-sm text-gray-700 dark:text-gray-300 space-y-2">
+                    <p class="font-semibold text-blue-700 dark:text-blue-400">💡 Possible Reasons:</p>
+                    <ul class="list-disc list-inside space-y-1 text-xs">
+                        <li>Candle cache was recently cleared</li>
+                        <li>Data retention policy (30 days) cleaned old data</li>
+                        <li>Scan is from before cache implementation</li>
+                        <li>System maintenance removed cached data</li>
+                    </ul>
+                    
+                    <p class="font-semibold text-blue-700 dark:text-blue-400 mt-3">📋 Current Scan Info:</p>
+                    <div class="text-xs space-y-1">
+                        <div><strong>Date:</strong> {{ $scanLog->scan_date->format('M d, Y') }}</div>
+                        <div><strong>Time:</strong> {{ \Carbon\Carbon::parse($scanLog->scan_time)->format('H:i:s') }}</div>
+                        <div><strong>Price:</strong> {{ number_format($scanLog->current_price, 2) }}</div>
+                        @if($scanLog->pattern_detected)
+                            <div><strong>Pattern:</strong> {{ ucwords(str_replace('_', ' ', $scanLog->pattern_detected)) }}</div>
+                        @endif
+                    </div>
+                    
+                    @php
+                        $scanAge = now()->diffInHours($scanLog->scan_date);
+                    @endphp
+                    
+                    @if($scanAge < 72)
+                        <div class="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                            <p class="text-xs font-semibold text-green-700 dark:text-green-400">✅ Recent Scan</p>
+                            <p class="text-xs text-green-600 dark:text-green-500 mt-1">
+                                This scan is recent ({{ round($scanAge) }} hours old). Next trading scan will repopulate the cache with fresh data.
+                            </p>
+                        </div>
+                    @else
+                        <div class="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
+                            <p class="text-xs font-semibold text-amber-700 dark:text-amber-400">⚠️ Old Scan</p>
+                            <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                                This scan is {{ round($scanAge / 24) }} days old. Historical data may have been cleaned per retention policy (30 days).
+                            </p>
+                        </div>
+                    @endif
+                    
+                    <div class="mt-3 text-center">
+                        <p class="text-xs text-gray-600 dark:text-gray-400">
+                            💡 <strong>Note:</strong> EMA values, pattern details, and rejection reasons are still available in the sections below.
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
     @else
         <div id="scanLogChart" style="min-height: 500px;"></div>

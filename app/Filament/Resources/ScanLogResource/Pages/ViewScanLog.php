@@ -62,8 +62,12 @@ class ViewScanLog extends ViewRecord
                                 'scanLog' => $this->record,
                             ]),
                     ])
+                    ->description(fn () => empty($this->getHistoricalCandles()) 
+                        ? '📊 Chart unavailable - candle data not in cache' 
+                        : 'Interactive candlestick chart with EMA indicators'
+                    )
                     ->collapsible()
-                    ->collapsed(false),
+                    ->collapsed(fn () => empty($this->getHistoricalCandles())),
                     
                 Section::make('Technical Indicators')
                     ->schema([
