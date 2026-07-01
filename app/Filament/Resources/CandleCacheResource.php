@@ -40,6 +40,7 @@ class CandleCacheResource extends Resource
                                     ->disabled(),
                                 Forms\Components\DateTimePicker::make('candle_timestamp')
                                     ->label('Time')
+                                    ->timezone('Asia/Kolkata')
                                     ->disabled(),
                             ]),
                         
@@ -72,7 +73,8 @@ class CandleCacheResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('candle_timestamp')
                     ->label('Date & Time')
-                    ->dateTime('M d, Y H:i')
+                    ->dateTime('M d, Y H:i', 'Asia/Kolkata')
+                    ->suffix(' IST')
                     ->sortable()
                     ->searchable(),
                 
