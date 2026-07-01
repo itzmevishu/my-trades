@@ -143,13 +143,14 @@ class PaperTradingService extends BaseService
             
             // Build detailed rejection reason with score breakdown
             $scores = $scoringResult['scores'];
+            $breakdown = $scoringResult['breakdown'] ?? [];
             $detailedReason = "Score {$scoringResult['score']}/100 (need {$minScore}+) - {$scoringResult['recommendation']}\n\n";
             $detailedReason .= "Score Breakdown:\n";
-            $detailedReason .= "• Trend Filter: {$scores['trend']}/35 pts\n";
-            $detailedReason .= "• Price Action: {$scores['price_action']}/25 pts\n";
-            $detailedReason .= "• EMA Confluence: {$scores['ema_confluence']}/20 pts\n";
-            $detailedReason .= "• Market Structure: {$scores['market_structure']}/15 pts\n";
-            $detailedReason .= "• Volume: {$scores['volume']}/5 pts";
+            $detailedReason .= "• Trend Filter: {$scores['trend']}/35 pts — " . $this->explainScoreComponent('trend', $scores['trend'], $breakdown) . "\n";
+            $detailedReason .= "• Price Action: {$scores['price_action']}/25 pts — " . $this->explainScoreComponent('price_action', $scores['price_action'], $breakdown) . "\n";
+            $detailedReason .= "• EMA Confluence: {$scores['ema_confluence']}/20 pts — " . $this->explainScoreComponent('ema_confluence', $scores['ema_confluence'], $breakdown) . "\n";
+            $detailedReason .= "• Market Structure: {$scores['market_structure']}/15 pts — " . $this->explainScoreComponent('market_structure', $scores['market_structure'], $breakdown) . "\n";
+            $detailedReason .= "• Volume: {$scores['volume']}/5 pts — " . $this->explainScoreComponent('volume', $scores['volume'], $breakdown);
             
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
@@ -680,6 +681,70 @@ class PaperTradingService extends BaseService
         $count = Trade::where('date', $today)->count();
         
         return $count > 0;
+    }
+
+    /**
+     * Build a plain-English explanation for why a score component earned its points.
+     *
+     * Uses the descriptive label from the scorer's breakdown (e.g. "No Clear Trend")
+     * and appends a short actionable note so the Decision Analysis is self-explanatory.
+     */
+    private function explainScoreComponent(string $key, int $points, array $breakdown): string
+    {
+        // Map each numeric score bucket to the breakdown label(s) the scorer produced.
+        $labelKeys = [
+            'trend' => ['trend_alignment', 'ema20_slope'],
+            'price_action' => ['price_action'],
+            'ema_confluence' => ['ema_confluence'],
+            'market_structure' => ['market_structure'],
+            'volume' => ['volume'],
+        ];
+
+        // Extract the descriptive text inside the parentheses of the breakdown label.
+        $descriptions = [];
+        foreach ($labelKeys[$key] ?? [] as $labelKey) {
+            if (!empty($breakdown[$labelKey])) {
+                if (preg_match('/\(([^)]+)\)/', $breakdown[$labelKey], $m)) {
+                    $descriptions[] = trim($m[1]);
+                } else {
+                    $descriptions[] = trim($breakdown[$labelKey]);
+                }
+            }
+        }
+
+        $label = !empty($descriptions) ? implode('; ', $descriptions) : null;
+
+        // Add a short "what this means / what to look for" note per component.
+        $note = match ($key) {
+            'trend' => $points === 0
+                ? 'EMAs not stacked in one direction (price/20/100/200 not aligned) — trend is unclear or price is fighting the trend, so no trend edge.'
+                : ($points < 35
+                    ? 'Only partial EMA alignment — trend is forming but not yet strong (full points need price>20>100>200 with rising 20 EMA, or the bearish mirror).'
+                    : 'Full trend alignment with EMA slope confirming direction.'),
+            'price_action' => $points === 0
+                ? 'Latest candle is weak/indecisive (tiny body) — no clear rejection, engulfing or momentum candle.'
+                : ($points < 20
+                    ? 'Some momentum but not a high-quality reversal/continuation pattern (pinbar or engulfing scores highest).'
+                    : 'Strong rejection/engulfing pattern detected.'),
+            'ema_confluence' => $points === 0
+                ? 'Price is too far from the 20/100/200 EMAs — no pullback entry; wait for price to return to an EMA.'
+                : ($points < 20
+                    ? 'Price is near an EMA but not at the highest-probability 100 EMA pullback zone.'
+                    : 'Price is right at a key EMA — ideal pullback entry.'),
+            'market_structure' => $points === 0
+                ? 'Structure is choppy — no consistent higher-highs/lows or lower-highs/lows.'
+                : ($points < 15
+                    ? 'Range-bound/consolidating — no strong trending structure.'
+                    : 'Clean trending structure (HH/HL or LH/LL).'),
+            'volume' => $points === 0
+                ? 'Volume flat or falling vs previous candle — move lacks participation/conviction.'
+                : ($points < 5
+                    ? 'Volume rising modestly — some but not strong confirmation.'
+                    : 'Strong volume surge confirming the move.'),
+            default => '',
+        };
+
+        return $label ? "{$label}. {$note}" : $note;
     }
 
     /**
