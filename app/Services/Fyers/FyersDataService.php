@@ -258,7 +258,7 @@ class FyersDataService extends BaseService
                 $timestamp = $candle[0];
                 $formatted[] = [
                     'timestamp' => $timestamp,
-                    'datetime' => Carbon::createFromTimestamp($timestamp)->format('Y-m-d H:i:s'),
+                    'datetime' => Carbon::createFromTimestamp($timestamp, config('app.timezone'))->format('Y-m-d H:i:s'),
                     'open' => (float) $candle[1],
                     'high' => (float) $candle[2],
                     'low' => (float) $candle[3],
@@ -366,7 +366,7 @@ class FyersDataService extends BaseService
                     [
                         'symbol' => $symbol,
                         'timeframe' => $timeframe,
-                        'candle_timestamp' => Carbon::createFromTimestamp($candle['timestamp']),
+                        'candle_timestamp' => Carbon::createFromTimestamp($candle['timestamp'], config('app.timezone')),
                     ],
                     [
                         'open' => $candle['open'],
