@@ -237,7 +237,7 @@ class TestAllCommand extends Command
             'App\Services\Trading\PaperTradingService',
             'App\Services\Trading\RiskEngine',
             'App\Services\Claude\ClaudeAPIService',
-            'App\Services\Analysis\PatternDetector',
+            'App\Services\Analysis\PriceActionAnalyzer',
             'App\Services\Analysis\EMACalculator',
             'App\Services\Fyers\FyersAuthService',
             'App\Services\Fyers\FyersDataService',

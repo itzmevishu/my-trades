@@ -5,8 +5,7 @@ namespace App\Services\Trading;
 use App\Services\BaseService;
 use App\Services\Fyers\FyersDataService;
 use App\Services\Analysis\EMACalculator;
-use App\Services\Analysis\PatternDetector;
-use App\Services\Analysis\AdvancedPatternScorer;
+use App\Services\Analysis\PriceActionAnalyzer;
 use App\Services\Claude\ClaudeAPIService;
 use App\Services\Notifications\TelegramNotificationService;
 use App\Models\Trade;
@@ -38,8 +37,7 @@ class PaperTradingService extends BaseService
 {
     private RiskEngine $riskEngine;
     private EMACalculator $emaCalculator;
-    private PatternDetector $patternDetector;
-    private AdvancedPatternScorer $advancedScorer;
+    private PriceActionAnalyzer $priceActionAnalyzer;
     private ClaudeAPIService $claudeService;
     private FyersDataService $fyersData;
 
@@ -47,8 +45,7 @@ class PaperTradingService extends BaseService
     {
         $this->riskEngine = new RiskEngine();
         $this->emaCalculator = new EMACalculator();
-        $this->patternDetector = new PatternDetector();
-        $this->advancedScorer = new AdvancedPatternScorer();
+        $this->priceActionAnalyzer = new PriceActionAnalyzer();
         $this->claudeService = new ClaudeAPIService();
         $this->fyersData = new FyersDataService();
     }
@@ -119,45 +116,66 @@ class PaperTradingService extends BaseService
         $emas = $this->emaCalculator->calculateMultipleEMAs($candles);
         $currentPrice = $candles[count($candles) - 1]['close'];
 
-        // Use Advanced Pattern Scorer (new sophisticated system)
-        $scoringResult = $this->advancedScorer->scoreSetup($candles);
-        
-        $this->logInfo('Setup scored', [
-            'score' => $scoringResult['score'],
-            'grade' => $scoringResult['grade'],
-            'direction' => $scoringResult['direction'],
-            'recommendation' => $scoringResult['recommendation']
+        // Run the PriceActionAnalyzer — the market-behaviour engine that reasons
+        // like a discretionary price-action trader (trend → structure → location
+        // → momentum → events → confirmation) and returns an explainable,
+        // confluence-based assessment.
+        $analysis = $this->priceActionAnalyzer->analyze($candles);
+
+        $this->logInfo('Price action analysis complete', [
+            'direction' => $analysis['direction'],
+            'confidence' => $analysis['confidence'],
+            'grade' => $analysis['grade'],
+            'recommendation' => $analysis['recommendation'],
+            'events' => $analysis['price_action'],
         ]);
 
-        // Also run legacy pattern detector for compatibility
-        $patternResult = $this->patternDetector->detectPatternWithDetails($candles);
+        // Direction and a human-friendly "signal name" derived from behaviour,
+        // not from a candle shape. Downstream trade handling uses these.
+        $direction = $analysis['direction'];
+        $patternResult = [
+            'pattern' => $this->describeSignal($analysis),
+            'direction' => $direction,
+        ];
 
-        // Minimum score threshold (configurable)
-        $minScore = setting('min_setup_score', 70);
-        
-        if ($scoringResult['score'] < $minScore) {
-            $this->logInfo('Setup score below threshold', [
-                'score' => $scoringResult['score'],
-                'min_required' => $minScore
-            ]);
-            
-            // Build detailed rejection reason with score breakdown
-            $scores = $scoringResult['scores'];
-            $breakdown = $scoringResult['breakdown'] ?? [];
-            $detailedReason = "Score {$scoringResult['score']}/100 (need {$minScore}+) - {$scoringResult['recommendation']}\n\n";
-            $detailedReason .= "Score Breakdown:\n";
-            $detailedReason .= "• Trend Filter: {$scores['trend']}/35 pts — " . $this->explainScoreComponent('trend', $scores['trend'], $breakdown) . "\n";
-            $detailedReason .= "• Price Action: {$scores['price_action']}/25 pts — " . $this->explainScoreComponent('price_action', $scores['price_action'], $breakdown) . "\n";
-            $detailedReason .= "• EMA Confluence: {$scores['ema_confluence']}/20 pts — " . $this->explainScoreComponent('ema_confluence', $scores['ema_confluence'], $breakdown) . "\n";
-            $detailedReason .= "• Market Structure: {$scores['market_structure']}/15 pts — " . $this->explainScoreComponent('market_structure', $scores['market_structure'], $breakdown) . "\n";
-            $detailedReason .= "• Volume: {$scores['volume']}/5 pts — " . $this->explainScoreComponent('volume', $scores['volume'], $breakdown);
-            
+        // A neutral read is never tradable regardless of confidence.
+        if ($direction === 'neutral') {
+            $this->logInfo('No directional edge — standing aside');
             ScanLog::create([
                 'scan_date' => now()->toDateString(),
                 'scan_time' => now()->toTimeString(),
                 'result' => 'rejected_score',
-                'pattern_detected' => $patternResult['pattern'] ?? 'score_based',
-                'pattern_direction' => $scoringResult['direction'],
+                'pattern_detected' => $patternResult['pattern'],
+                'pattern_direction' => $direction,
+                'current_price' => $currentPrice,
+                'ema_20' => $emas['ema_20'],
+                'ema_100' => $emas['ema_100'],
+                'ema_200' => $emas['ema_200'],
+                'ema_confluence_count' => 0,
+                'claude_score' => null,
+                'rejection_reason' => "No directional edge. {$analysis['reasoning']}",
+            ]);
+            return null;
+        }
+
+        // Minimum confidence threshold (configurable, 0–100 scale).
+        $minScore = setting('min_setup_score', 70);
+
+        if ($analysis['confidence'] < $minScore) {
+            $this->logInfo('Setup confidence below threshold', [
+                'confidence' => $analysis['confidence'],
+                'min_required' => $minScore
+            ]);
+
+            $detailedReason = "Confidence {$analysis['confidence']}/100 (need {$minScore}+) - {$analysis['recommendation']}\n\n";
+            $detailedReason .= $this->buildAnalysisSummary($analysis);
+
+            ScanLog::create([
+                'scan_date' => now()->toDateString(),
+                'scan_time' => now()->toTimeString(),
+                'result' => 'rejected_score',
+                'pattern_detected' => $patternResult['pattern'],
+                'pattern_direction' => $direction,
                 'current_price' => $currentPrice,
                 'ema_20' => $emas['ema_20'],
                 'ema_100' => $emas['ema_100'],
@@ -168,47 +186,44 @@ class PaperTradingService extends BaseService
             ]);
             return null;
         }
-        
-        $this->logInfo('Advanced scoring passed', [
-            'pattern' => $patternResult['pattern'] ?? 'none',
-            'score' => $scoringResult['score'],
-            'direction' => $scoringResult['direction']
-        ]);
-        
-        // The advanced scorer already validated trend, EMA alignment, and pullbacks
-        // It uses a weighted scoring system so we trust its judgment
-        
-        $this->logInfo('Setup meets quality standards', [
-            'setup_score' => $scoringResult['score'],
-            'grade' => $scoringResult['grade'],
-            'direction' => $scoringResult['direction']
+
+        $this->logInfo('Price action analysis passed', [
+            'signal' => $patternResult['pattern'],
+            'confidence' => $analysis['confidence'],
+            'direction' => $direction
         ]);
 
         // Get HTF bias (simulate - in production would analyze daily/weekly)
         $htfBias = $this->determineHTFBias($candles);
 
-        // Prepare enhanced setup data for Claude scoring
-        // Include our advanced score to guide Claude
+        // Prepare setup data for Claude scoring (secondary validation). We feed
+        // Claude the engine's explainable narrative and behavioural events so it
+        // scores the *story*, not just a label.
         $setupData = [
-            'candle_pattern' => $patternResult['pattern'] ?? 'score_based',
-            'advanced_score' => $scoringResult['score'],
-            'advanced_grade' => $scoringResult['grade'],
-            'score_breakdown' => $scoringResult['breakdown'],
+            'candle_pattern' => $patternResult['pattern'],
+            'advanced_score' => $analysis['confidence'],
+            'advanced_grade' => $analysis['grade'],
+            'score_breakdown' => $analysis['reasoning'],
+            'trend' => $analysis['trend'],
+            'market_structure' => $analysis['market_structure'],
+            'price_action_events' => $analysis['price_action'],
+            'support_resistance' => $analysis['support_resistance'],
+            'candlestick_confirmation' => $analysis['candlestick_confirmation'],
             'price_vs_ema' => $currentPrice > $emas['ema_20'] ? 'above' : 'below',
             'htf_bias' => $htfBias,
             'session_slot' => $this->getCurrentSessionSlot(),
             'market_condition' => $this->determineMarketCondition($candles),
-            'direction' => $scoringResult['direction']
+            'direction' => $direction
         ];
 
         // Score setup with Claude (now as secondary validation)
         $claudeScore = $this->claudeService->scoreSetup($setupData);
         
-        // Weighted final score: 70% advanced scorer, 30% Claude
-        $finalScore = ($scoringResult['score'] * 0.7) + ($claudeScore['score'] * 3); // Scale Claude to 0-30
+        // Weighted final score: 70% engine confidence, 30% Claude
+        $finalScore = ($analysis['confidence'] * 0.7) + ($claudeScore['score'] * 3); // Scale Claude to 0-30
         
         $this->logInfo('Combined scoring', [
-            'advanced_score' => $scoringResult['score'],
+            'engine_confidence' => $analysis['confidence'],
             'claude_score' => $claudeScore['score'],
             'final_weighted_score' => round($finalScore, 1)
         ]);
@@ -225,8 +240,8 @@ class PaperTradingService extends BaseService
                 'scan_date' => now()->toDateString(),
                 'scan_time' => now()->toTimeString(),
                 'result' => 'rejected_score',
-                'pattern_detected' => $patternResult['pattern'] ?? 'advanced_scoring',
-                'pattern_direction' => $scoringResult['direction'],
+                'pattern_detected' => $patternResult['pattern'],
+                'pattern_direction' => $direction,
                 'current_price' => $currentPrice,
                 'ema_20' => $emas['ema_20'],
                 'ema_100' => $emas['ema_100'],
@@ -684,67 +699,61 @@ class PaperTradingService extends BaseService
     }
 
     /**
-     * Build a plain-English explanation for why a score component earned its points.
-     *
-     * Uses the descriptive label from the scorer's breakdown (e.g. "No Clear Trend")
-     * and appends a short actionable note so the Decision Analysis is self-explanatory.
+     * Derive a human-friendly signal name from the analyzer's behaviour, not
+     * from a candle shape. Prefers the most meaningful structural / behavioural
+     * event so scan logs read like a trader's note (e.g. "ema_bounce" or
+     * "bos_bullish") rather than "bullish_engulfing".
      */
-    private function explainScoreComponent(string $key, int $points, array $breakdown): string
+    private function describeSignal(array $analysis): string
     {
-        // Map each numeric score bucket to the breakdown label(s) the scorer produced.
-        $labelKeys = [
-            'trend' => ['trend_alignment', 'ema20_slope'],
-            'price_action' => ['price_action'],
-            'ema_confluence' => ['ema_confluence'],
-            'market_structure' => ['market_structure'],
-            'volume' => ['volume'],
+        $priority = [
+            'bos_bullish', 'bos_bearish', 'choch_bullish', 'choch_bearish',
+            'failed_breakout', 'failed_breakdown', 'liquidity_sweep',
+            'breakout', 'breakdown', 'ema_bounce', 'ema_rejection',
+            'support_defended', 'resistance_defended', 'momentum_candle',
+            'bullish_rejection', 'bearish_rejection', 'strong_bullish_close',
+            'strong_bearish_close', 'retest', 'pullback', 'compression',
         ];
 
-        // Extract the descriptive text inside the parentheses of the breakdown label.
-        $descriptions = [];
-        foreach ($labelKeys[$key] ?? [] as $labelKey) {
-            if (!empty($breakdown[$labelKey])) {
-                if (preg_match('/\(([^)]+)\)/', $breakdown[$labelKey], $m)) {
-                    $descriptions[] = trim($m[1]);
-                } else {
-                    $descriptions[] = trim($breakdown[$labelKey]);
-                }
+        $events = $analysis['price_action'] ?? [];
+
+        foreach ($priority as $event) {
+            if (in_array($event, $events, true)) {
+                return $event;
             }
         }
 
-        $label = !empty($descriptions) ? implode('; ', $descriptions) : null;
+        $state = $analysis['trend']['state'] ?? 'analysis';
 
-        // Add a short "what this means / what to look for" note per component.
-        $note = match ($key) {
-            'trend' => $points === 0
-                ? 'EMAs not stacked in one direction (price/20/100/200 not aligned) — trend is unclear or price is fighting the trend, so no trend edge.'
-                : ($points < 35
-                    ? 'Only partial EMA alignment — trend is forming but not yet strong (full points need price>20>100>200 with rising 20 EMA, or the bearish mirror).'
-                    : 'Full trend alignment with EMA slope confirming direction.'),
-            'price_action' => $points === 0
-                ? 'Latest candle is weak/indecisive (tiny body) — no clear rejection, engulfing or momentum candle.'
-                : ($points < 20
-                    ? 'Some momentum but not a high-quality reversal/continuation pattern (pinbar or engulfing scores highest).'
-                    : 'Strong rejection/engulfing pattern detected.'),
-            'ema_confluence' => $points === 0
-                ? 'Price is too far from the 20/100/200 EMAs — no pullback entry; wait for price to return to an EMA.'
-                : ($points < 20
-                    ? 'Price is near an EMA but not at the highest-probability 100 EMA pullback zone.'
-                    : 'Price is right at a key EMA — ideal pullback entry.'),
-            'market_structure' => $points === 0
-                ? 'Structure is choppy — no consistent higher-highs/lows or lower-highs/lows.'
-                : ($points < 15
-                    ? 'Range-bound/consolidating — no strong trending structure.'
-                    : 'Clean trending structure (HH/HL or LH/LL).'),
-            'volume' => $points === 0
-                ? 'Volume flat or falling vs previous candle — move lacks participation/conviction.'
-                : ($points < 5
-                    ? 'Volume rising modestly — some but not strong confirmation.'
-                    : 'Strong volume surge confirming the move.'),
-            default => '',
-        };
+        return 'trend_' . $state;
+    }
 
-        return $label ? "{$label}. {$note}" : $note;
+    /**
+     * Build a readable, self-explanatory summary of the engine's assessment for
+     * scan-log rejection reasons. Mirrors how a trader would justify passing.
+     */
+    private function buildAnalysisSummary(array $analysis): string
+    {
+        $trend = $analysis['trend'];
+        $structure = $analysis['market_structure'];
+        $sr = $analysis['support_resistance'];
+
+        $lines = [];
+        $lines[] = "Direction: " . ucfirst($analysis['direction']) . " (grade {$analysis['grade']})";
+        $lines[] = "• Trend: " . ucfirst($trend['direction']) . " / {$trend['strength']} ({$trend['state']})";
+        $lines[] = "• Structure: {$structure['state']}"
+            . ($structure['bos'] ? ', BOS' : '')
+            . ($structure['choch'] ? ', CHoCH' : '')
+            . (!empty($structure['pullback']) ? ', pullback' : '')
+            . (!empty($structure['retest']) ? ', retest' : '');
+        $lines[] = "• Location: " . ($sr['support'] ? "support {$sr['support']}" : ($sr['resistance'] ? "resistance {$sr['resistance']}" : 'open space'))
+            . " (reaction: {$sr['reaction']})";
+        $lines[] = "• Events: " . (empty($analysis['price_action']) ? 'none' : implode(', ', $analysis['price_action']));
+        $lines[] = "• Candlestick confirmation: " . (empty($analysis['candlestick_confirmation']) ? 'none' : implode(', ', $analysis['candlestick_confirmation']));
+        $lines[] = "";
+        $lines[] = $analysis['reasoning'];
+
+        return implode("\n", $lines);
     }
 
     /**
